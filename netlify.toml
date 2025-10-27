@@ -1,11 +1,11 @@
 [build]
   publish = "dist"
-  command = "npm ci && npm run build"
+  command = "npm ci --include=dev && npm run build"
   base = "."
 
 [build.environment]
-  NODE_VERSION = "18"
-  NPM_VERSION = "9"
+  NODE_VERSION = "20"
+  NPM_VERSION = "10"
   NODE_ENV = "production"
 
 # Variables d'environnement pour Supabase (à configurer dans Netlify)
