@@ -1,7 +1,7 @@
 # Netlify build configuration - Updated to include devDependencies
 [build]
   publish = "dist"
-  command = "npm ci --include=dev && npm run build"
+  command = "bash build.sh"
   base = "."
 
 [build.environment]
