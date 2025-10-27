@@ -1,7 +1,7 @@
-# Netlify build configuration - Updated to include devDependencies
+# Netlify build configuration - vite moved to dependencies
 [build]
   publish = "dist"
-  command = "bash build.sh"
+  command = "npm ci && npm run build"
   base = "."
 
 [build.environment]
