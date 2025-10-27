@@ -1,3 +1,4 @@
+# Netlify build configuration - Updated to include devDependencies
 [build]
   publish = "dist"
   command = "npm ci --include=dev && npm run build"
