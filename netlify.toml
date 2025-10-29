@@ -1,17 +1,10 @@
-# Netlify build configuration - vite moved to dependencies
 [build]
   publish = "dist"
-  command = "npm ci && npm run build"
-  base = "."
+  command = "npm run build"
 
 [build.environment]
-  NODE_VERSION = "20"
-  NPM_VERSION = "10"
-  NODE_ENV = "production"
-
-# Variables d'environnement pour Supabase (à configurer dans Netlify)
-# VITE_SUPABASE_URL=https://your-project.supabase.co
-# VITE_SUPABASE_ANON_KEY=your-anon-key-here
+  NODE_VERSION = "18"
+  NPM_VERSION = "9"
 
 [[redirects]]
   from = "/*"

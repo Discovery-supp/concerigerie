@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import UserManagement from '../Admin/UserManagement';
+import AdminEarnings from './AdminEarnings';
 import { 
   Users, 
   Calendar, 
@@ -10,7 +11,8 @@ import {
   Shield, 
   Settings,
   BarChart3,
-  Home
+  Home,
+  CreditCard
 } from 'lucide-react';
 
 interface User {
@@ -81,12 +83,27 @@ const AdminDashboard: React.FC = () => {
         .from('reservations')
         .select(`
           *,
-          properties!reservations_property_id_fkey(title),
-          user_profiles!reservations_guest_id_fkey(first_name, last_name)
+          properties(title)
         `)
         .order('created_at', { ascending: false });
 
       if (reservationsError) throw reservationsError;
+
+      // Enrichir les réservations avec les informations des utilisateurs
+      const enrichedReservations = await Promise.all(
+        (reservationsData || []).map(async (reservation) => {
+          const { data: userData } = await supabase
+            .from('user_profiles')
+            .select('first_name, last_name')
+            .eq('id', reservation.guest_id)
+            .single();
+          
+          return {
+            ...reservation,
+            guest_name: userData ? `${userData.first_name || ''} ${userData.last_name || ''}`.trim() : 'Invité'
+          };
+        })
+      );
 
       // Charger les propriétés
       const { data: propertiesData, error: propertiesError } = await supabase
@@ -100,16 +117,16 @@ const AdminDashboard: React.FC = () => {
       if (propertiesError) throw propertiesError;
 
       setUsers(usersData || []);
-      setReservations(reservationsData || []);
+      setReservations(enrichedReservations || []);
       setProperties(propertiesData || []);
 
       // Calculer les statistiques
-      const totalRevenue = reservationsData?.reduce((sum, r) => sum + (r.total_amount || 0), 0) || 0;
+      const totalRevenue = enrichedReservations?.reduce((sum, r) => sum + (r.total_amount || 0), 0) || 0;
       const monthlyGrowth = 12.5; // Calculer la croissance réelle
 
       setStats({
         totalUsers: usersData?.length || 0,
-        totalReservations: reservationsData?.length || 0,
+        totalReservations: enrichedReservations?.length || 0,
         totalRevenue,
         monthlyGrowth
       });
@@ -150,6 +167,7 @@ const AdminDashboard: React.FC = () => {
     { id: 'users', label: 'Utilisateurs', icon: Users },
     { id: 'properties', label: 'Propriétés', icon: Home },
     { id: 'reservations', label: 'Réservations', icon: Calendar },
+    { id: 'earnings', label: 'Paiements', icon: CreditCard },
     { id: 'analytics', label: 'Analyses', icon: TrendingUp },
     { id: 'settings', label: 'Paramètres', icon: Settings }
   ];
@@ -407,6 +425,10 @@ const AdminDashboard: React.FC = () => {
               </table>
             </div>
           </div>
+        )}
+
+        {selectedTab === 'earnings' && (
+          <AdminEarnings />
         )}
 
         {selectedTab === 'analytics' && (

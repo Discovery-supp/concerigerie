@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
+import HostEarnings from './HostEarnings';
 import { 
   Calendar, 
   Users, 
@@ -14,7 +15,8 @@ import {
   CheckCircle,
   AlertCircle,
   BarChart3,
-  Settings
+  Settings,
+  CreditCard
 } from 'lucide-react';
 
 interface Reservation {
@@ -62,6 +64,7 @@ interface HostStats {
 
 const HostDashboard: React.FC = () => {
   const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState('overview');
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [properties, setProperties] = useState<Property[]>([]);
@@ -76,10 +79,23 @@ const HostDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [selectedPeriod, setSelectedPeriod] = useState('month');
   const [notifications, setNotifications] = useState<any[]>([]);
+  const [currentUserId, setCurrentUserId] = useState<string>('');
 
   useEffect(() => {
     loadDashboardData();
+    getCurrentUser();
   }, []);
+
+  const getCurrentUser = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        setCurrentUserId(user.id);
+      }
+    } catch (error) {
+      console.error('Erreur récupération utilisateur:', error);
+    }
+  };
 
   const loadDashboardData = async () => {
     try {
@@ -219,6 +235,44 @@ const HostDashboard: React.FC = () => {
         <h1 className="text-3xl font-bold text-gray-900">Tableau de bord Hôte</h1>
         <p className="text-gray-600 mt-1">Gérez vos propriétés et réservations</p>
       </div>
+
+      {/* Onglets */}
+      <div className="mb-8">
+        <div className="border-b border-gray-200">
+          <nav className="-mb-px flex space-x-8">
+            <button
+              onClick={() => setActiveTab('overview')}
+              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'overview'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-center">
+                <BarChart3 className="w-4 h-4 mr-2" />
+                Vue d'ensemble
+              </div>
+            </button>
+            <button
+              onClick={() => setActiveTab('earnings')}
+              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'earnings'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-center">
+                <CreditCard className="w-4 h-4 mr-2" />
+                Mes Gains
+              </div>
+            </button>
+          </nav>
+        </div>
+      </div>
+
+      {/* Contenu des onglets */}
+      {activeTab === 'overview' && (
+        <>
 
       {/* Statistiques principales */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
@@ -383,6 +437,12 @@ const HostDashboard: React.FC = () => {
           />
         </div>
       </div>
+        </>
+      )}
+
+      {activeTab === 'earnings' && currentUserId && (
+        <HostEarnings hostId={currentUserId} />
+      )}
     </div>
   );
 };
