@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { Phone, Mail, MapPin, Facebook, Instagram, Linkedin } from 'lucide-react';
 
 const Footer: React.FC = () => {
@@ -33,11 +34,11 @@ const Footer: React.FC = () => {
           <div className="space-y-4">
             <h4 className="text-lg font-semibold font-heading text-white">Nos Services</h4>
             <ul className="space-y-2 text-sm">
-              <li><a href="/services" className="hover:text-white transition-colors">Gestion Complète</a></li>
-              <li><a href="/services" className="hover:text-white transition-colors">Photographie Professionnelle</a></li>
-              <li><a href="/services" className="hover:text-white transition-colors">Conciergerie Voyageurs</a></li>
-              <li><a href="/services" className="hover:text-white transition-colors">Services Additionnels</a></li>
-              <li><a href="/become-partner" className="hover:text-white transition-colors">Partenariats</a></li>
+              <li><Link to="/services" className="hover:text-white transition-colors">Gestion Complète</Link></li>
+              <li><Link to="/services" className="hover:text-white transition-colors">Photographie Professionnelle</Link></li>
+              <li><Link to="/services" className="hover:text-white transition-colors">Conciergerie Voyageurs</Link></li>
+              <li><Link to="/services" className="hover:text-white transition-colors">Services Additionnels</Link></li>
+              <li><Link to="/become-partner" className="hover:text-white transition-colors">Partenariats</Link></li>
             </ul>
           </div>
 
@@ -45,11 +46,11 @@ const Footer: React.FC = () => {
           <div className="space-y-4">
             <h4 className="text-lg font-semibold font-heading text-white">Liens Utiles</h4>
             <ul className="space-y-2 text-sm">
-              <li><a href="/become-host" className="hover:text-white transition-colors">Devenir Hôte</a></li>
-              <li><a href="/become-partner" className="hover:text-white transition-colors">Devenir Partenaire</a></li>
-              <li><a href="/become-provider" className="hover:text-white transition-colors">Devenir Prestataire</a></li>
-              <li><a href="/services" className="hover:text-white transition-colors">Nos Forfaits</a></li>
-              <li><a href="/faq" className="hover:text-white transition-colors">FAQ</a></li>
+              <li><Link to="/become-host" className="hover:text-white transition-colors">Devenir Hôte</Link></li>
+              <li><Link to="/become-partner" className="hover:text-white transition-colors">Devenir Partenaire</Link></li>
+              <li><Link to="/become-provider" className="hover:text-white transition-colors">Devenir Prestataire</Link></li>
+              <li><Link to="/services" className="hover:text-white transition-colors">Nos Forfaits</Link></li>
+              <li><Link to="/faq" className="hover:text-white transition-colors">FAQ</Link></li>
             </ul>
           </div>
 

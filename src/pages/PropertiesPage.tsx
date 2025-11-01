@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useEffect } from 'react';
 import propertiesService from '../services/properties';
 import reviewsService from '../services/reviews';
-import { supabase } from '../lib/supabase';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import OptimizedImage from '../components/Common/OptimizedImage';
 
 const PropertiesPage: React.FC = () => {
@@ -30,13 +30,12 @@ const PropertiesPage: React.FC = () => {
     try {
       setLoading(true);
       
-      // Test de connexion simple d'abord
-      const { data: testData, error: testError } = await supabase
-        .from('properties')
-        .select('*')
-        .limit(1);
-      
-      console.log('Test connexion:', { testData, testError });
+      // Ne pas appeler Supabase si non configuré
+      if (!isSupabaseConfigured) {
+        setProperties([]);
+        setLoading(false);
+        return;
+      }
       
       const data = await propertiesService.getProperties();
       
@@ -45,20 +44,48 @@ const PropertiesPage: React.FC = () => {
         data.map(async (property) => {
           const { average, count } = await reviewsService.getPropertyAverageRating(property.id);
 
-          // Gérer les images - si c'est un chemin local, le construire correctement
+          // Gérer les images - les images peuvent être un tableau JSONB ou un tableau simple
           let imageUrl = 'https://images.pexels.com/photos/1571460/pexels-photo-1571460.jpeg';
-          if (property.images && property.images.length > 0) {
-            const firstImage = property.images[0];
-            // Si l'image commence par /, c'est un chemin local dans /public
-            if (firstImage.startsWith('/')) {
+          
+          // Normaliser le format des images (peut être jsonb ou array)
+          let imagesArray: string[] = [];
+          if (property.images) {
+            if (Array.isArray(property.images)) {
+              imagesArray = property.images;
+            } else if (typeof property.images === 'string') {
+              // Si c'est une string, essayer de la parser comme JSON
+              try {
+                const parsed = JSON.parse(property.images);
+                imagesArray = Array.isArray(parsed) ? parsed : [];
+              } catch {
+                imagesArray = [property.images];
+              }
+            } else if (property.images && typeof property.images === 'object') {
+              // Si c'est un objet JSONB, essayer de l'extraire
+              imagesArray = Object.values(property.images) as string[];
+            }
+          }
+          
+          if (imagesArray && imagesArray.length > 0) {
+            const firstImage = imagesArray[0];
+            // Vérifier si c'est une URL base64
+            if (firstImage.startsWith('data:image')) {
               imageUrl = firstImage;
-            } else if (firstImage.startsWith('http')) {
-              // Si c'est déjà une URL complète
+            } else if (firstImage.startsWith('http://') || firstImage.startsWith('https://')) {
+              // URL complète
+              imageUrl = firstImage;
+            } else if (firstImage.startsWith('/')) {
+              // Chemin local
               imageUrl = firstImage;
             } else {
-              // Sinon, ajouter le / au début
-              imageUrl = `/${firstImage}`;
+              // Autre format, essayer avec https://
+              imageUrl = firstImage;
             }
+          }
+          
+          // Log pour déboguer
+          if (imagesArray.length === 0 && property.id) {
+            console.warn(`Propriété ${property.id} n'a pas d'images:`, property.images);
           }
 
           return {
@@ -72,8 +99,12 @@ const PropertiesPage: React.FC = () => {
       
       setProperties(enrichedProperties);
     } catch (error) {
-      console.error('Erreur détaillée:', error);
-      console.error('Erreur chargement propriétés:', error);
+      // Ne logger l'erreur que si Supabase est configuré
+      if (isSupabaseConfigured) {
+        console.error('Erreur détaillée:', error);
+        console.error('Erreur chargement propriétés:', error);
+      }
+      setProperties([]);
     } finally {
       setLoading(false);
     }

@@ -3,11 +3,23 @@ import { createClient } from '@supabase/supabase-js'
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Missing Supabase environment variables')
+// Vérifier si Supabase est configuré
+export const isSupabaseConfigured = !!(supabaseUrl && supabaseAnonKey && 
+  supabaseUrl !== 'https://placeholder.supabase.co' && 
+  supabaseAnonKey !== 'placeholder-key')
+
+// Gestion gracieuse de l'absence des variables d'environnement
+// L'application peut démarrer mais Supabase ne fonctionnera pas
+if (!isSupabaseConfigured) {
+  console.warn('⚠️ Variables d\'environnement Supabase manquantes. Certaines fonctionnalités ne seront pas disponibles.')
+  console.warn('Créez un fichier .env à la racine avec VITE_SUPABASE_URL et VITE_SUPABASE_ANON_KEY')
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+// Créer un client Supabase uniquement si configuré
+// Sinon, créer un client mock qui ne fait rien pour éviter les erreurs
+export const supabase = isSupabaseConfigured 
+  ? createClient(supabaseUrl!, supabaseAnonKey!)
+  : createClient('https://placeholder.supabase.co', 'placeholder-key')
 
 // Types pour TypeScript
 export type Database = {
@@ -20,7 +32,7 @@ export type Database = {
           first_name: string
           last_name: string
           phone: string
-          user_type: 'owner' | 'traveler' | 'partner' | 'provider' | 'admin'
+          user_type: 'owner' | 'traveler' | 'partner' | 'provider' | 'admin' | 'super_admin'
           profile_image: string | null
           created_at: string
           updated_at: string
@@ -31,7 +43,7 @@ export type Database = {
           first_name: string
           last_name: string
           phone: string
-          user_type: 'owner' | 'traveler' | 'partner' | 'provider' | 'admin'
+          user_type: 'owner' | 'traveler' | 'partner' | 'provider' | 'admin' | 'super_admin'
           profile_image?: string | null
           created_at?: string
           updated_at?: string

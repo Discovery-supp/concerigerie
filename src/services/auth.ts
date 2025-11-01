@@ -1,4 +1,4 @@
-import { supabase } from '../lib/supabase'
+import { supabase, isSupabaseConfigured } from '../lib/supabase'
 import type { Database } from '../lib/supabase'
 
 type User = Database['public']['Tables']['user_profiles']['Row']
@@ -11,6 +11,10 @@ export const authService = {
     phone: string
     userType: string
   }) {
+    if (!isSupabaseConfigured) {
+      throw new Error('Supabase n\'est pas configuré. Veuillez configurer les variables d\'environnement.')
+    }
+    
     try {
       // Créer l'utilisateur dans Supabase Auth
       // Le trigger database créera automatiquement le profil
@@ -54,15 +58,28 @@ export const authService = {
 
   // Connexion
   async signIn(email: string, password: string) {
+    if (!isSupabaseConfigured) {
+      throw new Error('Supabase n\'est pas configuré. Veuillez configurer les variables d\'environnement.')
+    }
+    
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
 
-      if (error) throw error
+      if (error) {
+        // Messages d'erreur plus explicites
+        if (error.message.includes('Invalid login credentials')) {
+          throw new Error('Email ou mot de passe incorrect.')
+        }
+        if (error.message.includes('Email not confirmed')) {
+          throw new Error('Veuillez confirmer votre adresse email avant de vous connecter.')
+        }
+        throw error
+      }
 
-      // Récupérer le profil utilisateur
+      // Récupérer le profil utilisateur (peut être null si pas encore créé)
       if (data.user) {
         const { data: profile, error: profileError } = await supabase
           .from('user_profiles')
@@ -70,11 +87,17 @@ export const authService = {
           .eq('id', data.user.id)
           .maybeSingle()
 
-        if (profileError) throw profileError
+        // Ne pas lancer d'erreur si le profil n'existe pas encore
+        // Le profil peut être créé plus tard
+        if (profileError && profileError.code !== 'PGRST116') {
+          console.warn('Erreur récupération profil:', profileError)
+        }
 
-        return { user: data.user, profile }
+        return { user: data.user, profile: profile || null }
       }
-    } catch (error) {
+
+      return { user: null, profile: null }
+    } catch (error: any) {
       console.error('Erreur connexion:', error)
       throw error
     }
@@ -82,6 +105,10 @@ export const authService = {
 
   // Connexion OAuth
   async signInWithOAuth(provider: 'google' | 'facebook' | 'apple') {
+    if (!isSupabaseConfigured) {
+      throw new Error('Supabase n\'est pas configuré. Veuillez configurer les variables d\'environnement.')
+    }
+    
     try {
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider,
@@ -100,6 +127,10 @@ export const authService = {
 
   // Déconnexion
   async signOut() {
+    if (!isSupabaseConfigured) {
+      return
+    }
+    
     try {
       const { error } = await supabase.auth.signOut()
       if (error) throw error
@@ -111,6 +142,10 @@ export const authService = {
 
   // Obtenir l'utilisateur actuel
   async getCurrentUser() {
+    if (!isSupabaseConfigured) {
+      return { user: null, profile: null }
+    }
+    
     try {
       const { data: { user }, error } = await supabase.auth.getUser()
       

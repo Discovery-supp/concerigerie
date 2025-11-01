@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { Home, Camera, Users, Wrench, Star, Shield, Clock, TrendingUp } from 'lucide-react';
 
 const ServicesSection: React.FC = () => {
@@ -214,18 +215,18 @@ const ServicesSection: React.FC = () => {
               Contactez-nous dès aujourd'hui pour une consultation gratuite et sans engagement.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <a
-                href="/consultation"
+              <Link
+                to="/consultation"
                 className="px-8 py-4 bg-white text-primary font-semibold rounded-lg hover:bg-gray-100 transition-all shadow-lg"
               >
                 Consultation Gratuite
-              </a>
-              <a
-                href="/become-host"
+              </Link>
+              <Link
+                to="/become-host"
                 className="px-8 py-4 bg-white/20 backdrop-blur-sm text-white font-semibold rounded-lg hover:bg-white/30 transition-all border border-white/30"
               >
                 Devenir Hôte
-              </a>
+              </Link>
             </div>
           </div>
         </div>

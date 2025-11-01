@@ -26,18 +26,28 @@ const LoginPage: React.FC = () => {
     try {
       const { user, profile } = await authService.signIn(formData.email, formData.password);
       
-      if (user && profile) {
-        // Redirection vers le dashboard
+      if (user) {
+        // Redirection vers le dashboard même si le profil n'existe pas encore
+        // Le profil peut être créé plus tard
         navigate('/dashboard');
+      } else {
+        setError('Erreur de connexion. Veuillez réessayer.');
       }
     } catch (error: any) {
       let errorMessage = error.message || 'Erreur de connexion';
       
-      if (error.message && error.message.includes('Invalid login credentials')) {
-        errorMessage = 'Identifiants incorrects. Vérifiez votre email et mot de passe, et assurez-vous d\'avoir confirmé votre adresse email si vous venez de vous inscrire.';
+      // Messages d'erreur plus clairs
+      if ((error.message && error.message.includes('Invalid login credentials')) || 
+          (error.message && error.message.includes('Email ou mot de passe incorrect'))) {
+        errorMessage = 'Email ou mot de passe incorrect.';
+      } else if (error.message && error.message.includes('Email not confirmed')) {
+        errorMessage = 'Veuillez confirmer votre adresse email avant de vous connecter.';
+      } else if (error.message && error.message.includes('Supabase n\'est pas configuré')) {
+        errorMessage = 'Erreur de configuration. Contactez l\'administrateur.';
       }
       
       setError(errorMessage);
+      console.error('Erreur de connexion détaillée:', error);
     } finally {
       setIsLoading(false);
     }

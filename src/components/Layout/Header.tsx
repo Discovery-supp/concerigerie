@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Menu, X, User, Calendar, Home, Users, Settings, Bell } from 'lucide-react';
 import Logo from '../../assets/logo.svg';
 
@@ -39,35 +40,35 @@ const Header: React.FC<HeaderProps> = ({ currentUser, userType }) => {
         <div className="flex justify-between items-center h-16">
           {/* Logo */}
           <div className="flex items-center">
-            <div className="flex-shrink-0">
+            <Link to="/" className="flex-shrink-0">
               <img 
                 src={Logo} 
                 alt="Nzoo Immo" 
                 className="h-12 w-auto"
               />
-            </div>
+            </Link>
           </div>
 
           {/* Navigation Desktop */}
           <nav className="hidden md:flex space-x-8">
-            <a href="/" className="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors">
+            <Link to="/" className="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors">
               Accueil
-            </a>
-            <a href="/properties" className="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors">
+            </Link>
+            <Link to="/properties" className="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors">
               Propriétés
-            </a>
-            <a href="/services" className="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors">
+            </Link>
+            <Link to="/services" className="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors">
               Nos Services
-            </a>
-            <a href="/become-host" className="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors">
+            </Link>
+            <Link to="/become-host" className="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors">
               Devenir Hôte
-            </a>
-            <a href="/become-partner" className="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors">
+            </Link>
+            <Link to="/become-partner" className="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors">
               Devenir Partenaire
-            </a>
-            <a href="/become-provider" className="text-secondary hover:text-primary px-3 py-2 rounded-md text-sm font-medium transition-colors">
+            </Link>
+            <Link to="/become-provider" className="text-secondary hover:text-primary px-3 py-2 rounded-md text-sm font-medium transition-colors">
               Devenir Prestataire
-            </a>
+            </Link>
           </nav>
 
           {/* Actions */}
@@ -83,14 +84,14 @@ const Header: React.FC<HeaderProps> = ({ currentUser, userType }) => {
                 {getMenuItems().length > 0 && (
                   <div className="hidden md:flex space-x-2">
                     {getMenuItems().map((item, index) => (
-                      <a
+                      <Link
                         key={index}
-                        href={item.href}
+                        to={item.href}
                         className="flex items-center space-x-1 text-secondary hover:text-primary px-3 py-2 rounded-md text-sm font-medium transition-colors"
                       >
                         <item.icon className="w-4 h-4" />
                         <span>{item.label}</span>
-                      </a>
+                      </Link>
                     ))}
                   </div>
                 )}
@@ -111,30 +112,30 @@ const Header: React.FC<HeaderProps> = ({ currentUser, userType }) => {
                   
                   {isUserMenuOpen && (
                     <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 border border-light-gray">
-                      <a href="/profile" className="block px-4 py-2 text-sm text-secondary hover:bg-gray-100">
+                      <Link to="/profile" className="block px-4 py-2 text-sm text-secondary hover:bg-gray-100">
                         Mon Profil
-                      </a>
-                      <a href="/logout" className="block px-4 py-2 text-sm text-secondary hover:bg-gray-100">
+                      </Link>
+                      <Link to="/logout" className="block px-4 py-2 text-sm text-secondary hover:bg-gray-100">
                         Déconnexion
-                      </a>
+                      </Link>
                     </div>
                   )}
                 </div>
               </>
             ) : (
               <div className="flex space-x-2">
-                <a
-                  href="/login"
+                <Link
+                  to="/login"
                   className="px-4 py-2 text-sm font-medium text-secondary hover:text-primary transition-colors"
                 >
                   Connexion
-                </a>
-                <a
-                  href="/register"
+                </Link>
+                <Link
+                  to="/register"
                   className="px-4 py-2 text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary-light transition-all shadow-md"
                 >
                   Inscription
-                </a>
+                </Link>
               </div>
             )}
 
@@ -153,34 +154,34 @@ const Header: React.FC<HeaderProps> = ({ currentUser, userType }) => {
       {isMenuOpen && (
         <div className="md:hidden bg-white border-t border-light-gray">
           <div className="px-2 pt-2 pb-3 space-y-1">
-            <a href="/" className="block px-3 py-2 text-secondary hover:text-primary hover:bg-gray-50 rounded-md">
+            <Link to="/" className="block px-3 py-2 text-secondary hover:text-primary hover:bg-gray-50 rounded-md">
               Accueil
-            </a>
-            <a href="/properties" className="block px-3 py-2 text-secondary hover:text-primary hover:bg-gray-50 rounded-md">
+            </Link>
+            <Link to="/properties" className="block px-3 py-2 text-secondary hover:text-primary hover:bg-gray-50 rounded-md">
               Propriétés
-            </a>
-            <a href="/services" className="block px-3 py-2 text-secondary hover:text-primary hover:bg-gray-50 rounded-md">
+            </Link>
+            <Link to="/services" className="block px-3 py-2 text-secondary hover:text-primary hover:bg-gray-50 rounded-md">
               Nos Services
-            </a>
-            <a href="/become-host" className="block px-3 py-2 text-secondary hover:text-primary hover:bg-gray-50 rounded-md">
+            </Link>
+            <Link to="/become-host" className="block px-3 py-2 text-secondary hover:text-primary hover:bg-gray-50 rounded-md">
               Devenir Hôte
-            </a>
-            <a href="/become-partner" className="block px-3 py-2 text-secondary hover:text-primary hover:bg-gray-50 rounded-md">
+            </Link>
+            <Link to="/become-partner" className="block px-3 py-2 text-secondary hover:text-primary hover:bg-gray-50 rounded-md">
               Devenir Partenaire
-            </a>
-            <a href="/become-provider" className="block px-3 py-2 text-secondary hover:text-primary hover:bg-gray-50 rounded-md">
+            </Link>
+            <Link to="/become-provider" className="block px-3 py-2 text-secondary hover:text-primary hover:bg-gray-50 rounded-md">
               Devenir Prestataire
-            </a>
+            </Link>
             
             {currentUser && getMenuItems().map((item, index) => (
-              <a
+              <Link
                 key={index}
-                href={item.href}
+                to={item.href}
                 className="flex items-center space-x-2 px-3 py-2 text-secondary hover:text-primary hover:bg-gray-50 rounded-md"
               >
                 <item.icon className="w-4 h-4" />
                 <span>{item.label}</span>
-              </a>
+              </Link>
             ))}
           </div>
         </div>

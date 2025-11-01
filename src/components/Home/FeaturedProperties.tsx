@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { MapPin, Users, Bed, Bath, Star } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 
 interface Property {
   id: string;
@@ -25,6 +26,13 @@ const FeaturedProperties: React.FC = () => {
 
   const fetchFeaturedProperties = async () => {
     try {
+      // Ne pas appeler Supabase si non configuré
+      if (!isSupabaseConfigured) {
+        setProperties([]);
+        setLoading(false);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('properties')
         .select('id, title, description, price_per_night, bedrooms, bathrooms, max_guests, address, neighborhood, images')
@@ -35,7 +43,11 @@ const FeaturedProperties: React.FC = () => {
       console.log('Properties loaded:', data);
       setProperties(data || []);
     } catch (error) {
-      console.error('Erreur lors du chargement des propriétés:', error);
+      // Ne logger l'erreur que si Supabase est configuré
+      if (isSupabaseConfigured) {
+        console.error('Erreur lors du chargement des propriétés:', error);
+      }
+      setProperties([]);
     } finally {
       setLoading(false);
     }
@@ -65,16 +77,52 @@ const FeaturedProperties: React.FC = () => {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {properties.map((property) => (
-            <a
+        {properties.length === 0 ? (
+          <div className="text-center py-12">
+            <p className="text-gray-600 text-lg mb-4">
+              {isSupabaseConfigured 
+                ? 'Aucune propriété disponible pour le moment.' 
+                : 'Configurez Supabase pour afficher les propriétés.'}
+            </p>
+            <Link
+              to="/properties"
+              className="inline-block px-6 py-3 bg-primary text-white font-semibold rounded-lg hover:bg-primary-light transition-all"
+            >
+              Voir toutes les propriétés
+            </Link>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {properties.map((property) => (
+            <Link
               key={property.id}
-              href={`/properties/${property.id}`}
+              to={`/property/${property.id}`}
               className="group bg-white rounded-2xl shadow-lg overflow-hidden hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-2"
             >
               <div className="relative h-64 overflow-hidden bg-gray-200">
                 <img
-                  src={property.images?.[0] || 'https://images.pexels.com/photos/1571460/pexels-photo-1571460.jpeg'}
+                  src={
+                    (() => {
+                      if (!property.images || property.images.length === 0) {
+                        return 'https://images.pexels.com/photos/1571460/pexels-photo-1571460.jpeg';
+                      }
+                      const img = Array.isArray(property.images) ? property.images[0] : property.images;
+                      if (typeof img === 'string') {
+                        // Si c'est base64 ou URL complète, utiliser directement
+                        if (img.startsWith('data:') || img.startsWith('http')) {
+                          return img;
+                        }
+                        // Sinon, essayer de parser si c'est JSON
+                        try {
+                          const parsed = JSON.parse(img);
+                          return Array.isArray(parsed) ? parsed[0] : img;
+                        } catch {
+                          return img;
+                        }
+                      }
+                      return 'https://images.pexels.com/photos/1571460/pexels-photo-1571460.jpeg';
+                    })()
+                  }
                   alt={property.title}
                   className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
                   onError={(e) => {
@@ -126,18 +174,21 @@ const FeaturedProperties: React.FC = () => {
                   </div>
                 </div>
               </div>
-            </a>
+            </Link>
           ))}
-        </div>
+          </div>
+        )}
 
-        <div className="text-center mt-12">
-          <a
-            href="/properties"
+        {properties.length > 0 && (
+          <div className="text-center mt-12">
+          <Link
+            to="/properties"
             className="inline-block px-8 py-4 bg-[#183154] text-white font-semibold rounded-lg hover:bg-[#1a3a5f] transition-all shadow-lg hover:shadow-xl"
           >
             Voir tous les hébergements
-          </a>
-        </div>
+          </Link>
+          </div>
+        )}
       </div>
     </div>
   );

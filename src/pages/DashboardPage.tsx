@@ -2,6 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { Home, Calendar, DollarSign, Users, Settings, LogOut, Package, Wrench } from 'lucide-react';
+import StatCard from '../components/Dashboard/StatCard';
+import QuickActionCard from '../components/Dashboard/QuickActionCard';
+import OwnerDashboard from '../components/Dashboard/OwnerDashboard';
+import AdminDashboard from '../components/Dashboard/AdminDashboard';
+import TravelerDashboard from '../components/Dashboard/TravelerDashboard';
+import ProviderDashboard from '../components/Dashboard/ProviderDashboard';
 
 interface UserProfile {
   id: string;
@@ -29,22 +35,29 @@ const DashboardPage: React.FC = () => {
 
   const checkAuth = async () => {
     try {
-      const { data: { user: authUser } } = await supabase.auth.getUser();
+      const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
 
-      if (!authUser) {
+      if (authError || !authUser) {
         navigate('/login');
         return;
       }
 
-      const { data: profile } = await supabase
+      // Utiliser maybeSingle() pour ne pas lancer d'erreur si le profil n'existe pas
+      const { data: profile, error: profileError } = await supabase
         .from('user_profiles')
         .select('*')
         .eq('id', authUser.id)
-        .single();
+        .maybeSingle();
 
       if (profile) {
         setUser(profile as UserProfile);
         await loadStats(profile as UserProfile);
+      } else if (profileError && profileError.code !== 'PGRST116') {
+        // Erreur autre que "not found"
+        console.error('Erreur récupération profil:', profileError);
+      } else {
+        // Profil n'existe pas encore - on peut afficher un message ou créer le profil
+        console.warn('Profil utilisateur non trouvé. Le profil peut être créé plus tard.');
       }
     } catch (error) {
       console.error('Erreur:', error);
@@ -133,157 +146,61 @@ const DashboardPage: React.FC = () => {
   }
 
   const getDashboardContent = () => {
-    switch (user?.user_type) {
-      case 'owner':
-        return (
-          <>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-              <StatCard
-                icon={<Home className="w-8 h-8 text-blue-600" />}
-                title="Propriétés"
-                value={stats.properties}
-                bgColor="bg-blue-50"
-              />
-              <StatCard
-                icon={<Calendar className="w-8 h-8 text-green-600" />}
-                title="Réservations"
-                value={stats.reservations}
-                bgColor="bg-green-50"
-              />
-              <StatCard
-                icon={<DollarSign className="w-8 h-8 text-yellow-600" />}
-                title="Revenus"
-                value={`$${stats.revenue.toFixed(2)}`}
-                bgColor="bg-yellow-50"
-              />
-              <StatCard
-                icon={<Users className="w-8 h-8 text-purple-600" />}
-                title="Avis"
-                value={stats.reviews}
-                bgColor="bg-purple-50"
-              />
-            </div>
+    // Si pas d'utilisateur ou pas de profil, afficher un message pour créer le profil
+    if (!user) {
+      return (
+        <div className="text-center py-12">
+          <p className="text-gray-600 mb-4">
+            Votre profil n'est pas encore configuré.
+          </p>
+          <button
+            onClick={() => navigate('/register')}
+            className="px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary-light transition-colors"
+          >
+            Compléter mon profil
+          </button>
+        </div>
+      );
+    }
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <QuickActionCard
-                title="Gérer mes propriétés"
-                description="Voir et modifier vos propriétés"
-                icon={<Home className="w-6 h-6" />}
-                onClick={() => navigate('/properties')}
-                color="blue"
-              />
-              <QuickActionCard
-                title="Voir les réservations"
-                description="Gérer les réservations de vos propriétés"
-                icon={<Calendar className="w-6 h-6" />}
-                onClick={() => alert('Fonctionnalité en développement')}
-                color="green"
-              />
-              <QuickActionCard
-                title="Ajouter une propriété"
-                description="Créer une nouvelle annonce"
-                icon={<Package className="w-6 h-6" />}
-                onClick={() => navigate('/add-property')}
-                color="orange"
-              />
-              <QuickActionCard
-                title="Paramètres"
-                description="Gérer votre compte"
-                icon={<Settings className="w-6 h-6" />}
-                onClick={() => alert('Fonctionnalité en développement')}
-                color="gray"
-              />
-            </div>
-          </>
-        );
+    // Si user_type est null ou undefined, afficher un message
+    if (!user.user_type) {
+      return (
+        <div className="text-center py-12">
+          <p className="text-gray-600 mb-4">
+            Le type d'utilisateur n'est pas défini. Veuillez compléter votre profil.
+          </p>
+          <button
+            onClick={() => navigate('/register')}
+            className="px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary-light transition-colors"
+          >
+            Compléter mon profil
+          </button>
+        </div>
+      );
+    }
+
+    switch (user.user_type) {
+      case 'owner':
+        return <OwnerDashboard userId={user.id} />;
 
       case 'provider':
+        return <ProviderDashboard userId={user.id} />;
+
+      case 'traveler':
+        return <TravelerDashboard userId={user.id} />;
+
+      case 'admin':
+      case 'super_admin':
+        return <AdminDashboard userId={user.id} />;
+
+      case 'partner':
         return (
           <>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
               <StatCard
-                icon={<Wrench className="w-8 h-8 text-blue-600" />}
-                title="Missions complétées"
-                value={stats.jobs}
-                bgColor="bg-blue-50"
-              />
-              <StatCard
-                icon={<Calendar className="w-8 h-8 text-green-600" />}
-                title="Missions en cours"
-                value={0}
-                bgColor="bg-green-50"
-              />
-              <StatCard
-                icon={<DollarSign className="w-8 h-8 text-yellow-600" />}
-                title="Revenus"
-                value="$0.00"
-                bgColor="bg-yellow-50"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <QuickActionCard
-                title="Mes interventions"
-                description="Voir toutes mes missions"
-                icon={<Wrench className="w-6 h-6" />}
-                onClick={() => alert('Fonctionnalité en développement')}
-                color="blue"
-              />
-              <QuickActionCard
-                title="Mon profil"
-                description="Gérer mes compétences et disponibilités"
-                icon={<Settings className="w-6 h-6" />}
-                onClick={() => alert('Fonctionnalité en développement')}
-                color="gray"
-              />
-            </div>
-          </>
-        );
-
-      case 'traveler':
-        return (
-          <>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-              <StatCard
-                icon={<Calendar className="w-8 h-8 text-blue-600" />}
-                title="Mes réservations"
-                value={stats.reservations}
-                bgColor="bg-blue-50"
-              />
-              <StatCard
-                icon={<Home className="w-8 h-8 text-green-600" />}
-                title="Propriétés visitées"
-                value={stats.reservations}
-                bgColor="bg-green-50"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <QuickActionCard
-                title="Mes réservations"
-                description="Voir toutes mes réservations"
-                icon={<Calendar className="w-6 h-6" />}
-                onClick={() => alert('Fonctionnalité en développement')}
-                color="blue"
-              />
-              <QuickActionCard
-                title="Rechercher un logement"
-                description="Trouver votre prochain séjour"
-                icon={<Home className="w-6 h-6" />}
-                onClick={() => navigate('/properties')}
-                color="green"
-              />
-            </div>
-          </>
-        );
-
-      case 'admin':
-        return (
-          <>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-              <StatCard
-                icon={<Home className="w-8 h-8 text-blue-600" />}
-                title="Propriétés"
+                icon={<Users className="w-8 h-8 text-blue-600" />}
+                title="Partenariats actifs"
                 value={stats.properties}
                 bgColor="bg-blue-50"
               />
@@ -292,12 +209,6 @@ const DashboardPage: React.FC = () => {
                 title="Réservations"
                 value={stats.reservations}
                 bgColor="bg-green-50"
-              />
-              <StatCard
-                icon={<Users className="w-8 h-8 text-purple-600" />}
-                title="Utilisateurs"
-                value="--"
-                bgColor="bg-purple-50"
               />
               <StatCard
                 icon={<DollarSign className="w-8 h-8 text-yellow-600" />}
@@ -309,18 +220,18 @@ const DashboardPage: React.FC = () => {
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <QuickActionCard
-                title="Gestion des utilisateurs"
-                description="Voir et gérer tous les utilisateurs"
+                title="Mes partenariats"
+                description="Gérer mes partenariats"
                 icon={<Users className="w-6 h-6" />}
                 onClick={() => alert('Fonctionnalité en développement')}
                 color="blue"
               />
               <QuickActionCard
-                title="Gestion des propriétés"
-                description="Voir et modérer les propriétés"
-                icon={<Home className="w-6 h-6" />}
-                onClick={() => navigate('/properties')}
-                color="green"
+                title="Paramètres"
+                description="Gérer mon compte partenaire"
+                icon={<Settings className="w-6 h-6" />}
+                onClick={() => alert('Fonctionnalité en développement')}
+                color="gray"
               />
             </div>
           </>
@@ -329,7 +240,18 @@ const DashboardPage: React.FC = () => {
       default:
         return (
           <div className="text-center py-12">
-            <p className="text-gray-600">Type d'utilisateur non reconnu</p>
+            <p className="text-gray-600 mb-2">
+              Type d'utilisateur non reconnu : <strong>{user?.user_type || 'non défini'}</strong>
+            </p>
+            <p className="text-gray-500 text-sm mb-4">
+              Types valides : owner, provider, partner, admin, traveler
+            </p>
+            <button
+              onClick={() => navigate('/register')}
+              className="px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary-light transition-colors"
+            >
+              Compléter mon profil
+            </button>
           </div>
         );
     }
@@ -349,6 +271,8 @@ const DashboardPage: React.FC = () => {
               {user?.user_type === 'provider' && 'prestataire'}
               {user?.user_type === 'traveler' && 'voyageur'}
               {user?.user_type === 'admin' && 'administrateur'}
+              {user?.user_type === 'partner' && 'partenaire'}
+              {!user?.user_type && 'utilisateur'}
             </p>
           </div>
           <button
@@ -363,54 +287,6 @@ const DashboardPage: React.FC = () => {
         {getDashboardContent()}
       </div>
     </div>
-  );
-};
-
-const StatCard: React.FC<{
-  icon: React.ReactNode;
-  title: string;
-  value: string | number;
-  bgColor: string;
-}> = ({ icon, title, value, bgColor }) => (
-  <div className={`${bgColor} rounded-xl p-6 shadow-sm`}>
-    <div className="flex items-center justify-between">
-      <div>
-        <p className="text-sm text-gray-600 mb-1">{title}</p>
-        <p className="text-2xl font-bold text-gray-900">{value}</p>
-      </div>
-      <div>{icon}</div>
-    </div>
-  </div>
-);
-
-const QuickActionCard: React.FC<{
-  title: string;
-  description: string;
-  icon: React.ReactNode;
-  onClick: () => void;
-  color: string;
-}> = ({ title, description, icon, onClick, color }) => {
-  const colorClasses = {
-    blue: 'bg-blue-600 hover:bg-blue-700',
-    green: 'bg-green-600 hover:bg-green-700',
-    orange: 'bg-orange-600 hover:bg-orange-700',
-    gray: 'bg-gray-600 hover:bg-gray-700',
-    purple: 'bg-purple-600 hover:bg-purple-700'
-  };
-
-  return (
-    <button
-      onClick={onClick}
-      className={`${colorClasses[color as keyof typeof colorClasses]} text-white rounded-xl p-6 shadow-sm hover:shadow-md transition-all text-left`}
-    >
-      <div className="flex items-start space-x-4">
-        <div className="bg-white bg-opacity-20 rounded-lg p-3">{icon}</div>
-        <div>
-          <h3 className="text-lg font-semibold mb-1">{title}</h3>
-          <p className="text-sm text-white text-opacity-90">{description}</p>
-        </div>
-      </div>
-    </button>
   );
 };
 

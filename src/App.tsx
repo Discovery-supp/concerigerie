@@ -5,6 +5,7 @@ import Header from './components/Layout/Header';
 import Footer from './components/Layout/Footer';
 import HomePage from './pages/HomePage';
 import PropertiesPage from './pages/PropertiesPage';
+import AddPropertyPage from './pages/AddPropertyPage';
 import PropertyDetailPage from './pages/PropertyDetailPage';
 import ServicesPage from './pages/ServicesPage';
 import LoginPage from './pages/LoginPage';
@@ -57,7 +58,7 @@ function App() {
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/create-property" element={<PropertyForm />} />
-            <Route path="/add-property" element={<PropertyForm />} />
+            <Route path="/add-property" element={<AddPropertyPage />} />
             <Route path="/booking" element={<BookingForm />} />
             <Route path="/confirmation" element={<ConfirmationPage />} />
             <Route path="/my-reservations" element={<MyReservationsPage />} />

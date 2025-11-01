@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { Search, Calendar, Users, MapPin, ChevronLeft, ChevronRight } from 'lucide-react';
 import OptimizedImage from '../Common/OptimizedImage';
 
@@ -102,18 +103,18 @@ const Hero: React.FC = () => {
 
           {/* CTAs */}
           <div className="flex flex-col sm:flex-row gap-4 justify-center items-center pt-8">
-            <a
-              href="/services"
+            <Link
+              to="/services"
               className="px-8 py-4 bg-white/20 backdrop-blur-sm text-white font-semibold rounded-lg hover:bg-white/30 transition-all border border-white/30"
             >
               Découvrir nos Services
-            </a>
-            <a
-              href="/booking"
+            </Link>
+            <Link
+              to="/booking"
               className="px-8 py-4 bg-[#183154] text-white font-semibold rounded-lg hover:bg-[#1a3a5f] transition-all shadow-lg"
             >
               Réserver Maintenant
-            </a>
+            </Link>
           </div>
         </div>
       </div>

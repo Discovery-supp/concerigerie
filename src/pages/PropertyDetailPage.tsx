@@ -1,57 +1,131 @@
-import React, { useState } from 'react';
-import { useParams } from 'react-router-dom';
-import { Star, MapPin, Users, Bed, Bath, Wifi, Car, School as Pool, ChevronLeft, ChevronRight, Calendar, CreditCard } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { Star, MapPin, Users, Bed, Bath, Wifi, Car, School as Pool, ChevronLeft, ChevronRight, Calendar, CreditCard, ArrowLeft } from 'lucide-react';
 import OptimizedImage from '../components/Common/OptimizedImage';
+import propertiesService from '../services/properties';
+import RealTimeBooking from '../components/Booking/RealTimeBooking';
+import { supabase } from '../lib/supabase';
 
 const PropertyDetailPage: React.FC = () => {
   const { id } = useParams();
+  const navigate = useNavigate();
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [showBookingForm, setShowBookingForm] = useState(false);
+  const [property, setProperty] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [reviews, setReviews] = useState<any[]>([]);
 
-  // Données d'exemple pour la propriété
-  const property = {
-    id: '1',
-    title: 'Magnifique appartement avec vue sur le fleuve Congo',
-    location: 'Gombe, Kinshasa',
-    price: 85,
-    rating: 4.8,
-    reviews: 127,
-    guests: 4,
-    bedrooms: 2,
-    bathrooms: 2,
-    beds: 2,
-    surface: 120,
-    images: [
-      'https://images.pexels.com/photos/1571460/pexels-photo-1571460.jpeg',
-      'https://images.pexels.com/photos/1396122/pexels-photo-1396122.jpeg',
-      'https://images.pexels.com/photos/271624/pexels-photo-271624.jpeg',
-      'https://images.pexels.com/photos/1396132/pexels-photo-1396132.jpeg',
-      'https://images.pexels.com/photos/1571468/pexels-photo-1571468.jpeg'
-    ],
-    amenities: ['wifi', 'parking', 'pool', 'kitchen', 'tv', 'ac'],
-    type: 'Appartement',
-    description: 'Superbe appartement moderne situé au cœur de Gombe avec une vue imprenable sur le fleuve Congo. Parfait pour les voyageurs d\'affaires et les touristes souhaitant découvrir Kinshasa dans le confort et l\'élégance.',
-    neighborhood: 'Gombe',
-    beachAccess: false,
-    category: 'Luxe',
-    cleaningFee: 25,
-    serviceFee: 0.12,
-    checkIn: '15:00',
-    checkOut: '11:00',
-    rules: [
-      'Pas de fêtes ou d\'événements',
-      'Pas de fumée',
-      'Pas d\'animaux domestiques',
-      'Arrivée autonome avec boîte à clés'
-    ],
-    host: {
-      name: 'Marie Kabila',
-      image: 'https://images.pexels.com/photos/1239291/pexels-photo-1239291.jpeg',
-      joinedYear: 2020,
-      reviewsCount: 89,
-      rating: 4.9
+  useEffect(() => {
+    if (id) {
+      loadProperty();
+    }
+  }, [id]);
+
+  const loadProperty = async () => {
+    try {
+      setLoading(true);
+      
+      if (!id) {
+        console.error('ID de propriété manquant');
+        throw new Error('ID de propriété manquant');
+      }
+      
+      console.log('Chargement propriété avec ID:', id);
+      const data = await propertiesService.getPropertyById(id);
+      
+      // Normaliser les images
+      let imagesArray: string[] = [];
+      if (data.images) {
+        if (Array.isArray(data.images)) {
+          imagesArray = data.images;
+        } else if (typeof data.images === 'string') {
+          try {
+            const parsed = JSON.parse(data.images);
+            imagesArray = Array.isArray(parsed) ? parsed : [data.images];
+          } catch {
+            imagesArray = [data.images];
+          }
+        } else if (typeof data.images === 'object') {
+          imagesArray = Object.values(data.images) as string[];
+        }
+      }
+      
+      // Si pas d'images, utiliser une image par défaut
+      if (imagesArray.length === 0) {
+        imagesArray = ['https://images.pexels.com/photos/1571460/pexels-photo-1571460.jpeg'];
+      }
+
+      // Charger les avis
+      const { data: reviewsData } = await supabase
+        .from('reviews')
+        .select('*, reviewer:user_profiles!reviews_reviewer_id_fkey(first_name, last_name)')
+        .eq('property_id', id)
+        .order('created_at', { ascending: false });
+
+      setProperty({
+        ...data,
+        images: imagesArray,
+        price: Number(data.price_per_night) || 0,
+        cleaningFee: Number(data.cleaning_fee) || 0,
+        serviceFee: 0.12,
+        guests: data.max_guests || 1,
+        bedrooms: data.bedrooms || 0,
+        bathrooms: data.bathrooms || 1,
+        beds: data.beds || 1,
+        surface: data.surface || 0,
+        location: data.address || '',
+        checkIn: data.check_in_time || '14:00',
+        checkOut: data.check_out_time || '11:00',
+        rules: Array.isArray(data.rules) ? data.rules : (data.rules ? [data.rules] : []),
+        amenities: Array.isArray(data.amenities) ? data.amenities : []
+      });
+      
+      setReviews(reviewsData || []);
+    } catch (error: any) {
+      console.error('Erreur chargement propriété:', error);
+      console.error('Erreur détaillée:', {
+        message: error.message,
+        code: error.code,
+        details: error,
+        id: id
+      });
+      
+      // Afficher un message plus détaillé
+      const errorMessage = error.message || 'Erreur inconnue';
+      alert(`Erreur lors du chargement de la propriété:\n\n${errorMessage}\n\nVérifiez la console pour plus de détails.`);
+      
+      navigate('/properties');
+    } finally {
+      setLoading(false);
     }
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-gray-600">Chargement de la propriété...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!property) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-gray-600 mb-4">Propriété non trouvée</p>
+          <button
+            onClick={() => navigate('/properties')}
+            className="px-4 py-2 bg-primary text-white rounded-lg"
+          >
+            Retour aux propriétés
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const amenityIcons = {
     wifi: { icon: Wifi, label: 'Wi-Fi' },
@@ -63,11 +137,13 @@ const PropertyDetailPage: React.FC = () => {
   };
 
   const nextImage = () => {
-    setCurrentImageIndex((prev) => (prev + 1) % property.images.length);
+    const imagesLength = normalizedImages.length || 1;
+    setCurrentImageIndex((prev) => (prev + 1) % imagesLength);
   };
 
   const prevImage = () => {
-    setCurrentImageIndex((prev) => (prev - 1 + property.images.length) % property.images.length);
+    const imagesLength = normalizedImages.length || 1;
+    setCurrentImageIndex((prev) => (prev - 1 + imagesLength) % imagesLength);
   };
 
   const calculateTotal = (nights: number) => {
@@ -77,9 +153,20 @@ const PropertyDetailPage: React.FC = () => {
     return subtotal + cleaning + serviceFee;
   };
 
+  const normalizedImages = Array.isArray(property.images) ? property.images : [];
+
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {/* Bouton retour */}
+        <button
+          onClick={() => navigate('/properties')}
+          className="mb-4 flex items-center space-x-2 text-gray-600 hover:text-gray-900"
+        >
+          <ArrowLeft className="w-5 h-5" />
+          <span>Retour aux propriétés</span>
+        </button>
+
         {/* En-tête */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold font-heading text-primary mb-2">
@@ -88,8 +175,8 @@ const PropertyDetailPage: React.FC = () => {
           <div className="flex items-center space-x-4 text-secondary">
             <div className="flex items-center">
               <Star className="w-4 h-4 text-yellow-400 fill-current mr-1" />
-              <span className="font-medium">{property.rating}</span>
-              <span className="ml-1">({property.reviews} avis)</span>
+              <span className="font-medium">{property.rating || 0}</span>
+              <span className="ml-1">({reviews.length} avis)</span>
             </div>
             <div className="flex items-center">
               <MapPin className="w-4 h-4 mr-1" />
@@ -105,10 +192,13 @@ const PropertyDetailPage: React.FC = () => {
             <div className="relative">
               <div className="aspect-video bg-gray-200 rounded-2xl overflow-hidden">
                 <OptimizedImage
-                  src={property.images[currentImageIndex]}
+                  src={normalizedImages[currentImageIndex] || normalizedImages[0] || 'https://images.pexels.com/photos/1571460/pexels-photo-1571460.jpeg'}
                   alt={`Image ${currentImageIndex + 1}`}
                   className="w-full h-full object-cover"
                   loading="lazy"
+                  onError={(e) => {
+                    e.currentTarget.src = 'https://images.pexels.com/photos/1571460/pexels-photo-1571460.jpeg';
+                  }}
                 />
                 
                 {/* Contrôles de navigation */}
@@ -126,55 +216,62 @@ const PropertyDetailPage: React.FC = () => {
                 </button>
 
                 {/* Indicateurs */}
-                <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex space-x-2">
-                  {property.images.map((_, index) => (
-                    <button
-                      key={index}
-                      onClick={() => setCurrentImageIndex(index)}
-                      className={`w-2 h-2 rounded-full transition-all ${
-                        index === currentImageIndex ? 'bg-white' : 'bg-white bg-opacity-50'
-                      }`}
-                    />
-                  ))}
-                </div>
+                {normalizedImages.length > 1 && (
+                  <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex space-x-2">
+                    {normalizedImages.map((_, index) => (
+                      <button
+                        key={index}
+                        onClick={() => setCurrentImageIndex(index)}
+                        className={`w-2 h-2 rounded-full transition-all ${
+                          index === currentImageIndex ? 'bg-white' : 'bg-white bg-opacity-50'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                )}
 
                 {/* Compteur d'images */}
-                <div className="absolute top-4 right-4 bg-black bg-opacity-50 text-white px-3 py-1 rounded-full text-sm">
-                  {currentImageIndex + 1} / {property.images.length}
-                </div>
+                {normalizedImages.length > 1 && (
+                  <div className="absolute top-4 right-4 bg-black bg-opacity-50 text-white px-3 py-1 rounded-full text-sm">
+                    {currentImageIndex + 1} / {normalizedImages.length}
+                  </div>
+                )}
               </div>
 
               {/* Miniatures */}
-              <div className="grid grid-cols-5 gap-2 mt-4">
-                {property.images.slice(0, 5).map((image, index) => (
-                  <button
-                    key={index}
-                    onClick={() => setCurrentImageIndex(index)}
-                    className={`aspect-video rounded-lg overflow-hidden border-2 transition-all ${
-                      index === currentImageIndex ? 'border-primary' : 'border-transparent'
-                    }`}
-                  >
-                    <img
-                      src={image}
-                      alt={`Miniature ${index + 1}`}
-                      className="w-full h-full object-cover"
-                    />
-                  </button>
-                ))}
-              </div>
+              {normalizedImages.length > 1 && (
+                <div className="grid grid-cols-5 gap-2 mt-4">
+                  {normalizedImages.slice(0, 5).map((image, index) => (
+                    <button
+                      key={index}
+                      onClick={() => setCurrentImageIndex(index)}
+                      className={`aspect-video rounded-lg overflow-hidden border-2 transition-all ${
+                        index === currentImageIndex ? 'border-primary' : 'border-transparent'
+                      }`}
+                    >
+                      <img
+                        src={image}
+                        alt={`Miniature ${index + 1}`}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          e.currentTarget.src = 'https://images.pexels.com/photos/1571460/pexels-photo-1571460.jpeg';
+                        }}
+                      />
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Informations sur l'hôte */}
             <div className="bg-white rounded-2xl p-6 shadow-lg">
               <div className="flex items-center space-x-4 mb-4">
-                <img
-                  src={property.host.image}
-                  alt={property.host.name}
-                  className="w-16 h-16 rounded-full object-cover"
-                />
+                <div className="w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center">
+                  <Users className="w-8 h-8 text-primary" />
+                </div>
                 <div>
                   <h3 className="text-xl font-semibold text-primary">
-                    Hébergement proposé par {property.host.name}
+                    Hébergement proposé par l'hôte
                   </h3>
                   <div className="flex items-center space-x-4 text-secondary text-sm">
                     <span>{property.guests} voyageurs</span>
@@ -183,14 +280,6 @@ const PropertyDetailPage: React.FC = () => {
                     <span>{property.bathrooms} salles de bain</span>
                   </div>
                 </div>
-              </div>
-              
-              <div className="flex items-center space-x-4 text-sm text-secondary">
-                <div className="flex items-center">
-                  <Star className="w-4 h-4 text-yellow-400 fill-current mr-1" />
-                  <span>{property.host.rating} ({property.host.reviewsCount} avis)</span>
-                </div>
-                <span>Hôte depuis {property.host.joinedYear}</span>
               </div>
             </div>
 
@@ -248,138 +337,24 @@ const PropertyDetailPage: React.FC = () => {
 
           {/* Sidebar de réservation */}
           <div className="lg:col-span-1">
-            <div className="bg-white rounded-2xl shadow-xl p-6 sticky top-8">
-              <div className="flex items-baseline justify-between mb-6">
-                <div>
-                  <span className="text-2xl font-bold text-primary">${property.price}</span>
-                  <span className="text-secondary ml-1">par nuit</span>
-                </div>
-                <div className="flex items-center">
-                  <Star className="w-4 h-4 text-yellow-400 fill-current mr-1" />
-                  <span className="font-medium">{property.rating}</span>
-                  <span className="text-secondary ml-1">({property.reviews})</span>
-                </div>
-              </div>
-
-              {!showBookingForm ? (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="border border-light-gray rounded-lg p-3">
-                      <label className="block text-xs font-medium text-secondary mb-1">ARRIVÉE</label>
-                      <input
-                        type="date"
-                        className="w-full text-sm border-none p-0 focus:ring-0"
-                      />
-                    </div>
-                    <div className="border border-light-gray rounded-lg p-3">
-                      <label className="block text-xs font-medium text-secondary mb-1">DÉPART</label>
-                      <input
-                        type="date"
-                        className="w-full text-sm border-none p-0 focus:ring-0"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="border border-light-gray rounded-lg p-3">
-                    <label className="block text-xs font-medium text-secondary mb-1">VOYAGEURS</label>
-                    <select className="w-full text-sm border-none p-0 focus:ring-0">
-                      <option>1 voyageur</option>
-                      <option>2 voyageurs</option>
-                      <option>3 voyageurs</option>
-                      <option>4 voyageurs</option>
-                    </select>
-                  </div>
-
-                  <button
-                    onClick={() => setShowBookingForm(true)}
-                    className="w-full py-3 bg-primary text-white font-semibold rounded-lg hover:bg-primary-light transition-colors"
-                  >
-                    Réserver
-                  </button>
-
-                  <p className="text-center text-sm text-secondary">
-                    Aucun montant ne vous sera débité pour le moment
-                  </p>
-
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span>${property.price} × 3 nuits</span>
-                      <span>${property.price * 3}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Frais de ménage</span>
-                      <span>${property.cleaningFee}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Frais de service</span>
-                      <span>${((property.price * 3 + property.cleaningFee) * property.serviceFee).toFixed(2)}</span>
-                    </div>
-                    <hr className="my-2" />
-                    <div className="flex justify-between font-semibold">
-                      <span>Total</span>
-                      <span>${calculateTotal(3).toFixed(2)}</span>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <h4 className="font-semibold text-primary">Finaliser la réservation</h4>
-                  
-                  <div className="space-y-3">
-                    <input
-                      type="text"
-                      placeholder="Prénom"
-                      className="w-full px-3 py-2 border border-light-gray rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-                    />
-                    <input
-                      type="text"
-                      placeholder="Nom"
-                      className="w-full px-3 py-2 border border-light-gray rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-                    />
-                    <input
-                      type="email"
-                      placeholder="Email"
-                      className="w-full px-3 py-2 border border-light-gray rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-                    />
-                    <input
-                      type="tel"
-                      placeholder="Téléphone"
-                      className="w-full px-3 py-2 border border-light-gray rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-                    />
-                  </div>
-
-                  <div>
-                    <h5 className="font-medium text-primary mb-2">Mode de paiement</h5>
-                    <div className="space-y-2">
-                      <label className="flex items-center p-3 border border-light-gray rounded-lg cursor-pointer hover:border-primary">
-                        <input type="radio" name="payment" className="mr-3 text-primary" />
-                        <CreditCard className="w-4 h-4 mr-2" />
-                        <span className="text-sm">Carte bancaire</span>
-                      </label>
-                      <label className="flex items-center p-3 border border-light-gray rounded-lg cursor-pointer hover:border-primary">
-                        <input type="radio" name="payment" className="mr-3 text-primary" />
-                        <span className="text-sm">Mobile Money</span>
-                      </label>
-                      <label className="flex items-center p-3 border border-light-gray rounded-lg cursor-pointer hover:border-primary">
-                        <input type="radio" name="payment" className="mr-3 text-primary" />
-                        <span className="text-sm">Espèces</span>
-                      </label>
-                    </div>
-                  </div>
-
-                  <button className="w-full py-3 bg-primary text-white font-semibold rounded-lg hover:bg-primary-light transition-colors">
-                    Confirmer et payer
-                  </button>
-
-                  <button
-                    onClick={() => setShowBookingForm(false)}
-                    className="w-full py-2 text-secondary hover:text-primary transition-colors"
-                  >
-                    Retour
-                  </button>
-                </div>
-              )}
-            </div>
+            <RealTimeBooking
+              property={{
+                id: property.id,
+                title: property.title,
+                price_per_night: Number(property.price_per_night) || property.price || 0,
+                cleaning_fee: Number(property.cleaning_fee) || property.cleaningFee || 0,
+                max_guests: property.guests || property.max_guests || 1,
+                min_nights: property.min_nights || 1,
+                max_nights: property.max_nights || 365,
+                cancellation_policy: property.cancellation_policy || 'flexible',
+                long_stay_discount_7: property.long_stay_discount_7,
+                long_stay_discount_30: property.long_stay_discount_30
+              }}
+              onBookingSuccess={(reservationId) => {
+                alert('Réservation confirmée !');
+                navigate(`/confirmation?reservation=${reservationId}`);
+              }}
+            />
           </div>
         </div>
       </div>
