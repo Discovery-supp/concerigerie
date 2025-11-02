@@ -8,7 +8,8 @@ import PerformanceStats from './PerformanceStats';
 import PaymentReports from './PaymentReports';
 import FinancialReports from './FinancialReports';
 import CreateAdminAccount from './CreateAdminAccount';
-import { Users, Calendar, Home, DollarSign, Settings, BarChart3, FileText, Download, Edit, Trash2, Shield, UserPlus } from 'lucide-react';
+import { Users, Calendar, Home, DollarSign, Settings, BarChart3, FileText, Download, Edit, Trash2, Shield, UserPlus, MessageCircle } from 'lucide-react';
+import MessagingSystem from '../Forms/MessagingSystem';
 
 interface AdminDashboardProps {
   userId: string;
@@ -16,7 +17,7 @@ interface AdminDashboardProps {
 
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ userId }) => {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'create_admin' | 'reservations' | 'stats' | 'financial' | 'support' | 'analytics'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'create_admin' | 'reservations' | 'stats' | 'financial' | 'support' | 'analytics' | 'messages'>('overview');
   const [users, setUsers] = useState<any[]>([]);
   const [reservations, setReservations] = useState<any[]>([]);
   const [currentUserType, setCurrentUserType] = useState<string | null>(null);
@@ -144,6 +145,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ userId }) => {
             { id: 'users', label: 'Utilisateurs', icon: Users },
             ...(currentUserType === 'super_admin' ? [{ id: 'create_admin', label: 'Créer Admin', icon: UserPlus }] : []),
             { id: 'reservations', label: 'Réservations', icon: Calendar },
+            { id: 'messages', label: 'Messages', icon: MessageCircle },
             { id: 'stats', label: 'Statistiques', icon: BarChart3 },
             { id: 'financial', label: 'Financier', icon: DollarSign },
             { id: 'support', label: 'Support', icon: Settings },
@@ -228,6 +230,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ userId }) => {
               icon={<DollarSign className="w-6 h-6" />}
               onClick={() => setActiveTab('financial')}
               color="orange"
+            />
+            <QuickActionCard
+              title="Messagerie"
+              description="Communiquer avec les utilisateurs"
+              icon={<MessageCircle className="w-6 h-6" />}
+              onClick={() => setActiveTab('messages')}
+              color="purple"
             />
           </div>
         </>
@@ -316,6 +325,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ userId }) => {
           userType="admin"
           title="Toutes les réservations"
         />
+      )}
+
+      {/* Messages */}
+      {activeTab === 'messages' && (
+        <div className="bg-white rounded-xl shadow-md p-6">
+          <MessagingSystem
+            userType="admin"
+            onSuccess={() => {
+              // Recharger si nécessaire
+            }}
+          />
+        </div>
       )}
 
       {/* Statistiques */}

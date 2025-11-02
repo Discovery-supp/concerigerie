@@ -426,7 +426,7 @@ const HostDashboard: React.FC = () => {
             description="Communication"
             icon={<MessageCircle className="w-6 h-6" />}
             color="purple"
-            onClick={() => navigate('/messages')}
+            onClick={() => navigate('/messaging')}
           />
           <QuickActionCard
             title="Statistiques"

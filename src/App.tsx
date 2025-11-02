@@ -19,6 +19,7 @@ import ProviderForm from './components/Forms/ProviderForm';
 import DashboardPage from './pages/DashboardPage';
 import ConfirmationPage from './pages/ConfirmationPage';
 import MyReservationsPage from './pages/MyReservationsPage';
+import MessagingPage from './pages/MessagingPage';
 
 function App() {
   // Simulation d'un utilisateur connecté pour la démo
@@ -62,6 +63,7 @@ function App() {
             <Route path="/booking" element={<BookingForm />} />
             <Route path="/confirmation" element={<ConfirmationPage />} />
             <Route path="/my-reservations" element={<MyReservationsPage />} />
+            <Route path="/messaging" element={<MessagingPage />} />
             <Route path="/become-host" element={<HostForm />} />
             <Route path="/become-partner" element={<PartnerForm />} />
             <Route path="/become-provider" element={<ProviderForm />} />

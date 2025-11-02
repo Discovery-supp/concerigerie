@@ -6,7 +6,7 @@ import { ArrowLeft } from 'lucide-react';
 
 const MessagingPage: React.FC = () => {
   const navigate = useNavigate();
-  const [userType, setUserType] = React.useState<'owner' | 'admin' | 'traveler'>('owner');
+  const [userType, setUserType] = React.useState<'owner' | 'admin' | 'traveler' | 'provider' | 'partner' | 'super_admin'>('owner');
 
   React.useEffect(() => {
     checkUserType();
@@ -27,7 +27,7 @@ const MessagingPage: React.FC = () => {
         .single();
 
       if (profile) {
-        setUserType(profile.user_type as 'owner' | 'admin' | 'traveler');
+        setUserType(profile.user_type as 'owner' | 'admin' | 'traveler' | 'provider' | 'partner' | 'super_admin');
       }
     } catch (error) {
       console.error('Erreur vérification type utilisateur:', error);

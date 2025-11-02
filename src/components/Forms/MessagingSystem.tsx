@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { MessageCircle, Send, User, Clock, CheckCircle, AlertCircle, Phone, Mail, Home, Calendar } from 'lucide-react';
+import { MessageCircle, Send, User, Clock, CheckCircle, AlertCircle, Phone, Mail, Home, Calendar, Search, X } from 'lucide-react';
 
 interface Message {
   id: string;
@@ -26,6 +26,14 @@ interface Conversation {
   participant_type: string;
 }
 
+interface UserProfile {
+  id: string;
+  first_name: string;
+  last_name: string;
+  user_type: string;
+  email?: string;
+}
+
 interface MessagingSystemProps {
   userType: 'owner' | 'admin' | 'traveler';
   onSuccess?: () => void;
@@ -40,13 +48,19 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [newSubject, setNewSubject] = useState('');
+  const [selectedReceiverId, setSelectedReceiverId] = useState<string | null>(null);
   const [showNewMessage, setShowNewMessage] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [sending, setSending] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [availableUsers, setAvailableUsers] = useState<UserProfile[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     loadCurrentUser();
     loadConversations();
+    loadAvailableUsers();
   }, []);
 
   useEffect(() => {
@@ -68,6 +82,28 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
       }
     } catch (error) {
       console.error('Erreur chargement utilisateur:', error);
+    }
+  };
+
+  const loadAvailableUsers = async () => {
+    setLoadingUsers(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // Charger tous les utilisateurs actifs sauf l'utilisateur actuel
+      const { data: users, error } = await supabase
+        .from('user_profiles')
+        .select('id, first_name, last_name, user_type, email')
+        .neq('id', user.id)
+        .order('first_name', { ascending: true });
+
+      if (error) throw error;
+      setAvailableUsers(users || []);
+    } catch (error) {
+      console.error('Erreur chargement utilisateurs:', error);
+    } finally {
+      setLoadingUsers(false);
     }
   };
 
@@ -163,73 +199,125 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
 
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim() || !selectedConversation) return;
+    if (!newMessage.trim() || !selectedConversation) {
+      alert('Veuillez saisir un message');
+      return;
+    }
 
+    setSending(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!user) {
+        alert('Vous devez être connecté pour envoyer un message');
+        setSending(false);
+        return;
+      }
 
-      const { error } = await supabase
+      // Insérer le message dans la base de données
+      const { data: insertedMessage, error } = await supabase
         .from('messages')
         .insert([{
           sender_id: user.id,
           receiver_id: selectedConversation,
-          subject: newSubject || 'Message',
-          content: newMessage,
+          subject: 'Message',
+          content: newMessage.trim(),
           is_read: false
-        }]);
+        }])
+        .select()
+        .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Erreur détaillée:', error);
+        throw error;
+      }
 
+      if (!insertedMessage) {
+        throw new Error('Le message n\'a pas été enregistré');
+      }
+
+      // Réinitialiser le formulaire
       setNewMessage('');
-      setNewSubject('');
-      loadMessages(selectedConversation);
-      loadConversations();
+      
+      // Recharger les messages pour afficher le nouveau message
+      await loadMessages(selectedConversation);
+      
+      // Recharger les conversations pour mettre à jour la dernière conversation
+      await loadConversations();
+      
+      // Notification de succès
+      console.log('Message envoyé avec succès:', insertedMessage);
+      
       onSuccess?.();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erreur envoi message:', error);
-      alert('Erreur lors de l\'envoi du message');
+      alert(`Erreur lors de l'envoi du message: ${error.message || 'Une erreur est survenue'}`);
+    } finally {
+      setSending(false);
     }
   };
 
   const startNewConversation = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim()) return;
+    if (!newMessage.trim() || !selectedReceiverId) {
+      alert('Veuillez sélectionner un destinataire et saisir un message');
+      return;
+    }
 
+    setSending(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      // Pour l'instant, on envoie à l'administration
-      // Dans une vraie application, on aurait une liste d'utilisateurs
-      const { data: adminUsers } = await supabase
-        .from('user_profiles')
-        .select('id')
-        .eq('user_type', 'admin')
-        .limit(1);
-
-      if (adminUsers && adminUsers.length > 0) {
-        const { error } = await supabase
-          .from('messages')
-          .insert([{
-            sender_id: user.id,
-            receiver_id: adminUsers[0].id,
-            subject: newSubject || 'Nouveau message',
-            content: newMessage,
-            is_read: false
-          }]);
-
-        if (error) throw error;
-
-        setNewMessage('');
-        setNewSubject('');
-        setShowNewMessage(false);
-        loadConversations();
-        onSuccess?.();
+      if (!user) {
+        alert('Vous devez être connecté pour envoyer un message');
+        setSending(false);
+        return;
       }
-    } catch (error) {
+
+      // Insérer le message dans la base de données
+      const { data: insertedMessage, error } = await supabase
+        .from('messages')
+        .insert([{
+          sender_id: user.id,
+          receiver_id: selectedReceiverId,
+          subject: newSubject.trim() || 'Nouveau message',
+          content: newMessage.trim(),
+          is_read: false
+        }])
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Erreur détaillée:', error);
+        throw error;
+      }
+
+      if (!insertedMessage) {
+        throw new Error('Le message n\'a pas été enregistré');
+      }
+
+      console.log('Message envoyé avec succès:', insertedMessage);
+
+      // Réinitialiser le formulaire
+      setNewMessage('');
+      setNewSubject('');
+      setSelectedReceiverId(null);
+      setSearchQuery('');
+      setShowNewMessage(false);
+      
+      // Recharger les conversations
+      await loadConversations();
+      
+      // Sélectionner automatiquement la nouvelle conversation
+      setSelectedConversation(selectedReceiverId);
+      
+      // Charger les messages de la nouvelle conversation
+      await loadMessages(selectedReceiverId);
+      
+      onSuccess?.();
+    } catch (error: any) {
       console.error('Erreur nouveau message:', error);
-      alert('Erreur lors de l\'envoi du message');
+      alert(`Erreur lors de l'envoi du message: ${error.message || 'Une erreur est survenue'}`);
+    } finally {
+      setSending(false);
     }
   };
 
@@ -249,12 +337,41 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
 
   const getConversationIcon = (userType: string) => {
     switch (userType) {
-      case 'admin': return <AlertCircle className="w-5 h-5 text-red-600" />;
-      case 'owner': return <Home className="w-5 h-5 text-blue-600" />;
-      case 'traveler': return <User className="w-5 h-5 text-green-600" />;
-      default: return <User className="w-5 h-5 text-gray-600" />;
+      case 'admin':
+      case 'super_admin': 
+        return <AlertCircle className="w-5 h-5 text-red-600" />;
+      case 'owner': 
+        return <Home className="w-5 h-5 text-blue-600" />;
+      case 'traveler': 
+        return <User className="w-5 h-5 text-green-600" />;
+      case 'provider': 
+        return <Phone className="w-5 h-5 text-purple-600" />;
+      case 'partner': 
+        return <Mail className="w-5 h-5 text-orange-600" />;
+      default: 
+        return <User className="w-5 h-5 text-gray-600" />;
     }
   };
+
+  const getUserTypeLabel = (userType: string) => {
+    const labels: { [key: string]: string } = {
+      'admin': 'Administrateur',
+      'super_admin': 'Super Admin',
+      'owner': 'Propriétaire',
+      'traveler': 'Voyageur',
+      'provider': 'Prestataire',
+      'partner': 'Partenaire'
+    };
+    return labels[userType] || userType;
+  };
+
+  const filteredUsers = availableUsers.filter(user => {
+    const fullName = `${user.first_name} ${user.last_name}`.toLowerCase();
+    const searchLower = searchQuery.toLowerCase();
+    return fullName.includes(searchLower) || 
+           user.user_type.toLowerCase().includes(searchLower) ||
+           (user.email && user.email.toLowerCase().includes(searchLower));
+  });
 
   return (
     <div className="max-w-7xl mx-auto p-6">
@@ -321,7 +438,10 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
                             </span>
                           )}
                         </div>
-                        <p className="text-sm text-gray-500 truncate">
+                        <p className="text-xs text-gray-500">
+                          {getUserTypeLabel(conversation.participant_type)}
+                        </p>
+                        <p className="text-sm text-gray-500 truncate mt-1">
                           {conversation.last_message.content}
                         </p>
                         <p className="text-xs text-gray-400">
@@ -351,7 +471,7 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
                       {conversations.find(c => c.id === selectedConversation)?.participant_name}
                     </h3>
                     <p className="text-sm text-gray-500">
-                      {conversations.find(c => c.id === selectedConversation)?.participant_type}
+                      {getUserTypeLabel(conversations.find(c => c.id === selectedConversation)?.participant_type || '')}
                     </p>
                   </div>
                 </div>
@@ -397,12 +517,18 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
                     placeholder="Tapez votre message..."
                     className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     required
+                    disabled={sending}
                   />
                   <button
                     type="submit"
-                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                    disabled={sending || !newMessage.trim()}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center min-w-[80px]"
                   >
-                    <Send className="w-4 h-4" />
+                    {sending ? (
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    ) : (
+                      <Send className="w-4 h-4" />
+                    )}
                   </button>
                 </form>
               </div>
@@ -426,21 +552,95 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
       {/* Modal nouveau message */}
       {showNewMessage && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-md w-full">
-            <div className="p-6">
+          <div className="bg-white rounded-lg max-w-lg w-full max-h-[90vh] flex flex-col">
+            <div className="p-6 flex-shrink-0">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-lg font-semibold text-gray-900">
                   Nouveau message
                 </h3>
                 <button
-                  onClick={() => setShowNewMessage(false)}
+                  onClick={() => {
+                    setShowNewMessage(false);
+                    setSelectedReceiverId(null);
+                    setSearchQuery('');
+                    setNewMessage('');
+                    setNewSubject('');
+                  }}
                   className="text-gray-400 hover:text-gray-600"
                 >
-                  <AlertCircle className="w-6 h-6" />
+                  <X className="w-6 h-6" />
                 </button>
               </div>
 
               <form onSubmit={startNewConversation} className="space-y-4">
+                {/* Sélection du destinataire */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Destinataire *
+                  </label>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onFocus={() => setSearchQuery('')}
+                      className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="Rechercher un utilisateur..."
+                    />
+                  </div>
+                  
+                  {/* Liste des utilisateurs */}
+                  <div className="mt-2 max-h-48 overflow-y-auto border border-gray-200 rounded-md">
+                    {loadingUsers ? (
+                      <div className="p-4 text-center text-sm text-gray-500">
+                        Chargement...
+                      </div>
+                    ) : filteredUsers.length === 0 ? (
+                      <div className="p-4 text-center text-sm text-gray-500">
+                        Aucun utilisateur trouvé
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-gray-100">
+                        {filteredUsers.map((user) => (
+                          <button
+                            key={user.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedReceiverId(user.id);
+                              setSearchQuery(`${user.first_name} ${user.last_name}`);
+                            }}
+                            className={`w-full p-3 text-left hover:bg-gray-50 transition-colors ${
+                              selectedReceiverId === user.id ? 'bg-blue-50 border-l-4 border-blue-600' : ''
+                            }`}
+                          >
+                            <div className="flex items-center space-x-3">
+                              {getConversationIcon(user.user_type)}
+                              <div className="flex-1">
+                                <p className="text-sm font-medium text-gray-900">
+                                  {user.first_name} {user.last_name}
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                  {getUserTypeLabel(user.user_type)}
+                                </p>
+                              </div>
+                              {selectedReceiverId === user.id && (
+                                <CheckCircle className="w-5 h-5 text-blue-600" />
+                              )}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  
+                  {selectedReceiverId && (
+                    <div className="mt-2 p-2 bg-blue-50 rounded-md text-sm text-blue-900">
+                      Destinataire sélectionné: {filteredUsers.find(u => u.id === selectedReceiverId)?.first_name} {filteredUsers.find(u => u.id === selectedReceiverId)?.last_name}
+                    </div>
+                  )}
+                </div>
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Sujet
@@ -450,13 +650,13 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
                     value={newSubject}
                     onChange={(e) => setNewSubject(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Sujet du message"
+                    placeholder="Sujet du message (optionnel)"
                   />
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Message
+                    Message *
                   </label>
                   <textarea
                     value={newMessage}
@@ -471,16 +671,33 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
                 <div className="flex justify-end space-x-3">
                   <button
                     type="button"
-                    onClick={() => setShowNewMessage(false)}
+                    onClick={() => {
+                      setShowNewMessage(false);
+                      setSelectedReceiverId(null);
+                      setSearchQuery('');
+                      setNewMessage('');
+                      setNewSubject('');
+                    }}
                     className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
                   >
                     Annuler
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                    disabled={!selectedReceiverId || !newMessage.trim() || sending}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center space-x-2 min-w-[100px] justify-center"
                   >
-                    Envoyer
+                    {sending ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                        <span>Envoi...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Send className="w-4 h-4" />
+                        <span>Envoyer</span>
+                      </>
+                    )}
                   </button>
                 </div>
               </form>
