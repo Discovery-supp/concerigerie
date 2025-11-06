@@ -412,7 +412,7 @@ const HostDashboard: React.FC = () => {
             description="Voir et modifier vos propriétés"
             icon={<Home className="w-6 h-6" />}
             color="blue"
-            onClick={() => navigate('/properties')}
+            onClick={() => navigate('/manage-properties')}
           />
           <QuickActionCard
             title="Calendrier"

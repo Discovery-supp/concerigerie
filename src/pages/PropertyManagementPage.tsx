@@ -22,6 +22,7 @@ const PropertyManagementPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingProperty, setEditingProperty] = useState<string | null>(null);
+  const STORAGE_BUCKET = 'public';
 
   React.useEffect(() => {
     loadProperties();
@@ -70,6 +71,24 @@ const PropertyManagementPage: React.FC = () => {
     if (!confirm('Êtes-vous sûr de vouloir supprimer cette propriété ?')) return;
 
     try {
+      // Récupérer la propriété pour connaître les images à supprimer
+      const { data: propertyData } = await supabase
+        .from('properties')
+        .select('images')
+        .eq('id', propertyId)
+        .single();
+
+      // Supprimer d'abord les fichiers du Storage si présents
+      const imagePaths = normalizeImagePaths(propertyData?.images || [], STORAGE_BUCKET);
+      if (imagePaths.length > 0) {
+        const { error: storageErr } = await supabase.storage
+          .from(STORAGE_BUCKET)
+          .remove(imagePaths);
+        if (storageErr) {
+          console.warn('Suppression fichiers Storage incomplète:', storageErr);
+        }
+      }
+
       const { error } = await supabase
         .from('properties')
         .delete()
@@ -80,8 +99,96 @@ const PropertyManagementPage: React.FC = () => {
       setProperties(prev => prev.filter(p => p.id !== propertyId));
     } catch (error) {
       console.error('Erreur suppression:', error);
+      // Fallback fréquent: contraintes (réservations/avis) ou RLS
+      // On propose un retrait de la publication pour masquer l'annonce immédiatement
+      const wantsUnpublish = confirm(
+        "La suppression a échoué (réservations/avis liés ou droits).\n" +
+        "Voulez-vous retirer l'annonce de la publication à la place ?"
+      );
+      if (!wantsUnpublish) return;
+
+      try {
+        const { error: upErr } = await supabase
+          .from('properties')
+          .update({ is_published: false })
+          .eq('id', propertyId);
+        if (upErr) throw upErr;
+        setProperties(prev => prev.map(p => p.id === propertyId ? { ...p, is_published: false } : p));
+        alert("Annonce retirée de la publication. Vous pourrez la supprimer définitivement après avoir géré les réservations/avis associés.");
+      } catch (e) {
+        console.error('Erreur dépublication:', e);
+        alert("Impossible de retirer l'annonce. Contactez l'admin si le problème persiste.");
+      }
     }
   };
+
+  const forceDeleteProperty = async (propertyId: string) => {
+    if (!confirm(
+      "Suppression FORCÉE: cela va supprimer les réservations, avis et images liés.\n" +
+      "Cette action est irréversible. Confirmer ?"
+    )) return;
+
+    try {
+      // Récupérer les images
+      const { data: propertyData } = await supabase
+        .from('properties')
+        .select('images')
+        .eq('id', propertyId)
+        .single();
+
+      // 1) Supprimer les réservations liées
+      const { error: delResErr } = await supabase
+        .from('reservations')
+        .delete()
+        .eq('property_id', propertyId);
+      if (delResErr) console.warn('Suppression réservations partielle:', delResErr);
+
+      // 2) Supprimer les avis liés
+      const { error: delRevErr } = await supabase
+        .from('reviews')
+        .delete()
+        .eq('property_id', propertyId);
+      if (delRevErr) console.warn('Suppression avis partielle:', delRevErr);
+
+      // 3) Supprimer les fichiers du Storage
+      const imagePaths = normalizeImagePaths(propertyData?.images || [], STORAGE_BUCKET);
+      if (imagePaths.length > 0) {
+        const { error: storageErr } = await supabase.storage
+          .from(STORAGE_BUCKET)
+          .remove(imagePaths);
+        if (storageErr) console.warn('Suppression fichiers Storage partielle:', storageErr);
+      }
+
+      // 4) Supprimer la propriété
+      const { error: delPropErr } = await supabase
+        .from('properties')
+        .delete()
+        .eq('id', propertyId);
+      if (delPropErr) throw delPropErr;
+
+      setProperties(prev => prev.filter(p => p.id !== propertyId));
+      alert('Propriété et éléments liés supprimés.');
+    } catch (e) {
+      console.error('Erreur suppression forcée:', e);
+      alert("Impossible d'exécuter la suppression forcée (droits RLS ou contraintes). Contactez l'admin.");
+    }
+  };
+
+  // Convertit des URLs complètes ou des chemins en chemins relatifs au bucket
+  function normalizeImagePaths(images: string[] | string, bucket: string): string[] {
+    const list: string[] = Array.isArray(images)
+      ? images
+      : typeof images === 'string' && images
+        ? (() => { try { const p = JSON.parse(images); return Array.isArray(p) ? p : [images]; } catch { return [images]; } })()
+        : [];
+
+    const url = (supabase as any)?.supabaseUrl || '';
+    const base = `${String(url).replace(/\/$/, '')}/storage/v1/object/${bucket}/`;
+    return list
+      .filter(Boolean)
+      .map(s => String(s))
+      .map(p => (p.startsWith(base) ? p.substring(base.length) : p));
+  }
 
   const handleFormSuccess = () => {
     setShowForm(false);
@@ -246,6 +353,13 @@ const PropertyManagementPage: React.FC = () => {
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
+                        <button
+                          onClick={() => forceDeleteProperty(property.id)}
+                          className="p-2 text-red-700 hover:bg-red-50 rounded-lg"
+                          title="Supprimer (forcer)"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                         </div>
                       </div>
                     </div>

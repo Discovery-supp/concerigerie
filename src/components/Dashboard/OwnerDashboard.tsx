@@ -466,6 +466,40 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ userId }) => {
                     </button>
                     <button
                       onClick={async () => {
+                        if (!confirm('Supprimer cette propriété ? Cette action est irréversible.')) return;
+                        try {
+                          const { error } = await supabase
+                            .from('properties')
+                            .delete()
+                            .eq('id', property.id);
+                          if (error) throw error;
+                          loadData();
+                        } catch (err) {
+                          console.error('Erreur suppression:', err);
+                          const wantsUnpublish = confirm(
+                            "Suppression impossible (réservations/avis liés ou droits).\n" +
+                            "Voulez-vous retirer la publication ?"
+                          );
+                          if (wantsUnpublish) {
+                            try {
+                              const { error: upErr } = await supabase
+                                .from('properties')
+                                .update({ is_published: false })
+                                .eq('id', property.id);
+                              if (upErr) throw upErr;
+                              loadData();
+                            } catch (e) {
+                              alert("Impossible de dépublier. Essayez via Gérer les propriétés.");
+                            }
+                          }
+                        }
+                      }}
+                      className="flex-1 px-3 py-2 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 transition-colors text-sm"
+                    >
+                      Supprimer
+                    </button>
+                    <button
+                      onClick={async () => {
                         try {
                           const { error } = await supabase
                             .from('properties')
