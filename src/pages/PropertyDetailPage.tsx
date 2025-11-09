@@ -62,9 +62,23 @@ const PropertyDetailPage: React.FC = () => {
         .eq('property_id', id)
         .order('created_at', { ascending: false });
 
+      // Charger les légendes des images
+      let imageCaptions: { url: string; caption: string }[] = [];
+      if (data.image_captions) {
+        try {
+          const captions = typeof data.image_captions === 'string' 
+            ? JSON.parse(data.image_captions)
+            : data.image_captions;
+          imageCaptions = Array.isArray(captions) ? captions : [];
+        } catch {
+          imageCaptions = [];
+        }
+      }
+
       setProperty({
         ...data,
         images: imagesArray,
+        imageCaptions: imageCaptions,
         price: Number(data.price_per_night) || 0,
         cleaningFee: Number(data.cleaning_fee) || 0,
         serviceFee: 0.12,
@@ -74,6 +88,9 @@ const PropertyDetailPage: React.FC = () => {
         beds: data.beds || 1,
         surface: data.surface || 0,
         location: data.address || '',
+        commune: data.commune || '',
+        latitude: data.latitude,
+        longitude: data.longitude,
         checkIn: data.check_in_time || '14:00',
         checkOut: data.check_out_time || '11:00',
         rules: Array.isArray(data.rules) ? data.rules : (data.rules ? [data.rules] : []),
@@ -212,6 +229,19 @@ const PropertyDetailPage: React.FC = () => {
                   }}
                 />
                 
+                {/* Légende de l'image */}
+                {property.imageCaptions && property.imageCaptions.length > 0 && (
+                  (() => {
+                    const currentImageUrl = normalizedImages[currentImageIndex] || normalizedImages[0];
+                    const captionData = property.imageCaptions.find((c: any) => c.url === currentImageUrl);
+                    return captionData && captionData.caption ? (
+                      <div className="absolute bottom-16 left-4 right-4 bg-black bg-opacity-70 text-white px-4 py-2 rounded-lg">
+                        <p className="text-sm font-medium">{captionData.caption}</p>
+                      </div>
+                    ) : null;
+                  })()
+                )}
+                
                 {/* Contrôles de navigation */}
                 <button
                   onClick={prevImage}
@@ -249,27 +279,36 @@ const PropertyDetailPage: React.FC = () => {
                 )}
               </div>
 
-              {/* Miniatures */}
+              {/* Miniatures avec légendes */}
               {normalizedImages.length > 1 && (
                 <div className="grid grid-cols-5 gap-2 mt-4">
-                  {normalizedImages.slice(0, 5).map((image, index) => (
-                    <button
-                      key={index}
-                      onClick={() => setCurrentImageIndex(index)}
-                      className={`aspect-video rounded-lg overflow-hidden border-2 transition-all ${
-                        index === currentImageIndex ? 'border-primary' : 'border-transparent'
-                      }`}
-                    >
-                      <img
-                        src={image}
-                        alt={`Miniature ${index + 1}`}
-                        className="w-full h-full object-cover"
-                        onError={(e) => {
-                          e.currentTarget.src = 'https://images.pexels.com/photos/1571460/pexels-photo-1571460.jpeg';
-                        }}
-                      />
-                    </button>
-                  ))}
+                  {normalizedImages.slice(0, 5).map((image, index) => {
+                    const captionData = property.imageCaptions?.find((c: any) => c.url === image);
+                    return (
+                      <div key={index} className="relative">
+                        <button
+                          onClick={() => setCurrentImageIndex(index)}
+                          className={`aspect-video rounded-lg overflow-hidden border-2 transition-all w-full ${
+                            index === currentImageIndex ? 'border-primary' : 'border-transparent'
+                          }`}
+                        >
+                          <img
+                            src={image}
+                            alt={`Miniature ${index + 1}`}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              e.currentTarget.src = 'https://images.pexels.com/photos/1571460/pexels-photo-1571460.jpeg';
+                            }}
+                          />
+                        </button>
+                        {captionData && captionData.caption && (
+                          <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-60 text-white text-xs px-1 py-0.5 rounded-b-lg truncate">
+                            {captionData.caption}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -352,6 +391,48 @@ const PropertyDetailPage: React.FC = () => {
                   </div>
                 ))}
               </div>
+            </div>
+
+            {/* Carte de localisation */}
+            <div className="bg-white rounded-2xl p-6 shadow-lg">
+              <h3 className="text-xl font-semibold font-heading text-primary mb-4 flex items-center">
+                <MapPin className="w-6 h-6 mr-2" />
+                Où vous serez
+              </h3>
+              <div className="mb-4">
+                <p className="text-secondary">
+                  {property.location}
+                  {property.commune && `, ${property.commune}`}
+                </p>
+              </div>
+              {(property.latitude && property.longitude) ? (
+                <>
+                  <div className="rounded-lg overflow-hidden border border-gray-200">
+                    <iframe
+                      width="100%"
+                      height="400"
+                      style={{ border: 0 }}
+                      src={`https://www.openstreetmap.org/export/embed.html?bbox=${property.longitude - 0.01},${property.latitude - 0.01},${property.longitude + 0.01},${property.latitude + 0.01}&layer=mapnik&marker=${property.latitude},${property.longitude}`}
+                      allowFullScreen
+                      title="Localisation de la propriété"
+                    ></iframe>
+                  </div>
+                  <a
+                    href={`https://www.openstreetmap.org/?mlat=${property.latitude}&mlon=${property.longitude}#map=15/${property.latitude}/${property.longitude}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 text-sm mt-3 inline-block hover:text-blue-800 hover:underline"
+                  >
+                    Voir sur OpenStreetMap →
+                  </a>
+                </>
+              ) : (
+                <div className="p-8 text-center bg-gray-50 rounded-lg border border-gray-200">
+                  <MapPin className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                  <p className="text-gray-600">La localisation sur la carte n'est pas disponible pour cette propriété.</p>
+                  <p className="text-sm text-gray-500 mt-2">L'hôte peut ajouter les coordonnées GPS lors de la création de l'annonce.</p>
+                </div>
+              )}
             </div>
           </div>
 

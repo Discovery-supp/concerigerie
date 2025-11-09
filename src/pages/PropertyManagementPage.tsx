@@ -350,10 +350,11 @@ const PropertyManagementPage: React.FC = () => {
                           </button>
                           <button
                             onClick={() => setAvailabilityPropertyId(property.id)}
-                            className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg"
-                            title="Gérer la disponibilité"
+                            className="px-3 py-2 text-purple-600 hover:bg-purple-50 rounded-lg flex items-center space-x-2 border border-purple-200 hover:border-purple-300 transition-colors"
+                            title="Gérer la disponibilité - Bloquer/débloquer des dates et masquer le statut"
                           >
                             <Calendar className="w-4 h-4" />
+                            <span className="text-sm font-medium">Disponibilité</span>
                           </button>
                           <button
                             onClick={() => deleteProperty(property.id)}

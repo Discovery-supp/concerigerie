@@ -10,6 +10,7 @@ import MessageBox from './MessageBox';
 import PerformanceStats from './PerformanceStats';
 import PaymentReports from './PaymentReports';
 import { Home, Calendar, DollarSign, Users, Settings, Package, MessageCircle, Star, TrendingUp, Bell, CheckCircle, Clock } from 'lucide-react';
+import PropertyAvailabilityManager from './PropertyAvailabilityManager';
 
 interface OwnerDashboardProps {
   userId: string;
@@ -23,6 +24,7 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ userId }) => {
   const [reviews, setReviews] = useState<any[]>([]);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [availabilityPropertyId, setAvailabilityPropertyId] = useState<string | null>(null);
   const [stats, setStats] = useState({
     properties: 0,
     reservations: 0,
@@ -381,7 +383,73 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ userId }) => {
 
       {/* Calendrier */}
       {activeTab === 'calendar' && (
-        <CalendarView events={calendarEvents} />
+        <div className="space-y-6">
+          <div className="bg-white rounded-xl shadow-md p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xl font-semibold text-gray-900">Gestion de la disponibilité</h3>
+              <button
+                onClick={() => navigate('/manage-properties')}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center space-x-2"
+              >
+                <Home className="w-4 h-4" />
+                <span>Gérer toutes les propriétés</span>
+              </button>
+            </div>
+            <p className="text-gray-600 mb-4">
+              Sélectionnez une propriété pour bloquer/débloquer des dates manuellement ou visualisez toutes vos réservations.
+            </p>
+            
+            {properties.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                {properties.map((property) => (
+                  <div
+                    key={property.id}
+                    className="border border-gray-200 rounded-lg p-4 hover:border-blue-300 hover:shadow-md transition-all"
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex-1">
+                        <h4 className="font-semibold text-gray-900 mb-1">{property.title}</h4>
+                        <p className="text-sm text-gray-600 mb-2">{property.address}</p>
+                        <div className="flex items-center space-x-2">
+                          <span className={`px-2 py-1 text-xs rounded-full ${
+                            property.is_published 
+                              ? 'bg-green-100 text-green-800' 
+                              : 'bg-gray-100 text-gray-800'
+                          }`}>
+                            {property.is_published ? 'Publiée' : 'Non publiée'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setAvailabilityPropertyId(property.id)}
+                      className="w-full px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center justify-center space-x-2 text-sm font-medium"
+                    >
+                      <Calendar className="w-4 h-4" />
+                      <span>Gérer la disponibilité</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <Home className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                <p className="text-gray-600 mb-4">Vous n'avez pas encore de propriétés</p>
+                <button
+                  onClick={() => navigate('/add-property')}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                >
+                  Créer une propriété
+                </button>
+              </div>
+            )}
+          </div>
+          
+          <div className="bg-white rounded-xl shadow-md p-6">
+            <h3 className="text-xl font-semibold text-gray-900 mb-4">Vue d'ensemble du calendrier</h3>
+            <CalendarView events={calendarEvents} />
+          </div>
+        </div>
       )}
 
       {/* Avis */}
@@ -552,6 +620,17 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ userId }) => {
             )}
           </div>
         </div>
+      )}
+
+      {/* Modal de gestion de disponibilité */}
+      {availabilityPropertyId && (
+        <PropertyAvailabilityManager
+          propertyId={availabilityPropertyId}
+          onClose={() => {
+            setAvailabilityPropertyId(null);
+            loadData(); // Recharger les données pour mettre à jour le calendrier
+          }}
+        />
       )}
     </div>
   );

@@ -8,7 +8,8 @@ interface PropertyAvailabilityManagerProps {
 }
 
 const PropertyAvailabilityManager: React.FC<PropertyAvailabilityManagerProps> = ({ propertyId, onClose }) => {
-  const [blockedDates, setBlockedDates] = useState<string[]>([]);
+  const [manuallyBlockedDates, setManuallyBlockedDates] = useState<string[]>([]);
+  const [reservedDates, setReservedDates] = useState<string[]>([]);
   const [selectedDates, setSelectedDates] = useState<string[]>([]);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [loading, setLoading] = useState(false);
@@ -33,7 +34,9 @@ const PropertyAvailabilityManager: React.FC<PropertyAvailabilityManagerProps> = 
           const dates = typeof property.blocked_dates === 'string' 
             ? JSON.parse(property.blocked_dates)
             : property.blocked_dates;
-          setBlockedDates(Array.isArray(dates) ? dates : []);
+          setManuallyBlockedDates(Array.isArray(dates) ? dates : []);
+        } else {
+          setManuallyBlockedDates([]);
         }
       }
 
@@ -53,37 +56,32 @@ const PropertyAvailabilityManager: React.FC<PropertyAvailabilityManagerProps> = 
         }
       });
 
-      setBlockedDates(prev => [...new Set([...prev, ...reservationDates])]);
+      setReservedDates(reservationDates);
     } catch (error) {
       console.error('Erreur chargement disponibilité:', error);
     }
   };
 
-  const toggleDate = async (dateString: string) => {
+  const toggleDate = (dateString: string) => {
     // Ne pas permettre de bloquer les dates déjà réservées
-    const { data: reservations } = await supabase
-      .from('reservations')
-      .select('check_in, check_out, status')
-      .eq('property_id', propertyId)
-      .in('status', ['confirmed', 'pending']);
-
-    if (reservations) {
-      const isReserved = reservations.some(res => {
-        const start = new Date(res.check_in);
-        const end = new Date(res.check_out);
-        const date = new Date(dateString);
-        return date >= start && date < end;
-      });
-      if (isReserved) {
-        alert('Cette date est déjà réservée et ne peut pas être modifiée');
-        return;
-      }
+    if (reservedDates.includes(dateString)) {
+      alert('Cette date est déjà réservée et ne peut pas être modifiée');
+      return;
     }
 
+    // Vérifier si la date est déjà bloquée manuellement
+    const isCurrentlyBlocked = manuallyBlockedDates.includes(dateString);
+    const isInSelected = selectedDates.includes(dateString);
+
     setSelectedDates(prev => {
-      if (prev.includes(dateString)) {
+      if (isInSelected) {
+        // Retirer de la sélection
         return prev.filter(d => d !== dateString);
+      } else if (isCurrentlyBlocked) {
+        // Si déjà bloquée, l'ajouter à la sélection pour la débloquer
+        return [...prev, dateString];
       } else {
+        // Ajouter à la sélection pour bloquer
         return [...prev, dateString];
       }
     });
@@ -92,10 +90,28 @@ const PropertyAvailabilityManager: React.FC<PropertyAvailabilityManagerProps> = 
   const saveBlockedDates = async () => {
     setLoading(true);
     try {
+      // Fusionner : ajouter les nouvelles sélections et retirer celles qui étaient déjà bloquées
+      const updatedBlocked = [...manuallyBlockedDates];
+      
+      selectedDates.forEach(dateString => {
+        if (manuallyBlockedDates.includes(dateString)) {
+          // Si la date était déjà bloquée et est dans selectedDates, on la débloque
+          const index = updatedBlocked.indexOf(dateString);
+          if (index > -1) {
+            updatedBlocked.splice(index, 1);
+          }
+        } else {
+          // Si la date n'était pas bloquée et est dans selectedDates, on la bloque
+          if (!updatedBlocked.includes(dateString) && !reservedDates.includes(dateString)) {
+            updatedBlocked.push(dateString);
+          }
+        }
+      });
+
       const { error } = await supabase
         .from('properties')
         .update({ 
-          blocked_dates: JSON.stringify(selectedDates),
+          blocked_dates: updatedBlocked.length > 0 ? updatedBlocked : null,
           is_published: isPublished
         })
         .eq('id', propertyId);
@@ -156,13 +172,12 @@ const PropertyAvailabilityManager: React.FC<PropertyAvailabilityManagerProps> = 
 
   const isDateBlocked = (date: Date) => {
     const dateString = formatDate(date);
-    return blockedDates.includes(dateString) || selectedDates.includes(dateString);
+    return manuallyBlockedDates.includes(dateString) || selectedDates.includes(dateString);
   };
 
   const isDateReserved = (date: Date) => {
     const dateString = formatDate(date);
-    // Vérifier si c'est une date de réservation (pas de blocage manuel)
-    return blockedDates.includes(dateString) && !selectedDates.includes(dateString);
+    return reservedDates.includes(dateString);
   };
 
   const days = getDaysInMonth(currentMonth);
@@ -242,44 +257,61 @@ const PropertyAvailabilityManager: React.FC<PropertyAvailabilityManagerProps> = 
                 }
 
                 const dateString = formatDate(date);
-                const isBlocked = isDateBlocked(date);
+                const isBlocked = manuallyBlockedDates.includes(dateString);
                 const isReserved = isDateReserved(date);
                 const isSelected = selectedDates.includes(dateString);
                 const isToday = formatDate(new Date()) === dateString;
                 const isPast = date < new Date(new Date().setHours(0, 0, 0, 0));
+
+                // Déterminer l'état visuel
+                let bgColor = 'bg-white text-gray-900 border border-gray-200';
+                let titleText = 'Cliquez pour bloquer cette date';
+                
+                if (isReserved) {
+                  bgColor = 'bg-red-200 text-red-800 cursor-not-allowed';
+                  titleText = 'Date réservée (non modifiable)';
+                } else if (isSelected) {
+                  if (isBlocked) {
+                    bgColor = 'bg-orange-500 text-white';
+                    titleText = 'Sélectionné pour débloquer - Cliquez pour annuler';
+                  } else {
+                    bgColor = 'bg-blue-600 text-white';
+                    titleText = 'Sélectionné pour bloquer - Cliquez pour annuler';
+                  }
+                } else if (isBlocked) {
+                  bgColor = 'bg-gray-400 text-white';
+                  titleText = 'Date bloquée manuellement - Cliquez pour débloquer';
+                } else if (isPast) {
+                  bgColor = 'bg-gray-100 text-gray-400 cursor-not-allowed';
+                  titleText = 'Date passée';
+                } else if (isToday) {
+                  bgColor = 'bg-blue-100 text-blue-700 border-2 border-blue-500';
+                  titleText = "Aujourd'hui - Cliquez pour bloquer";
+                }
 
                 return (
                   <button
                     key={index}
                     onClick={() => !isReserved && !isPast && toggleDate(dateString)}
                     disabled={isReserved || isPast}
-                    className={`aspect-square p-2 rounded-lg text-sm transition-colors ${
-                      isReserved
-                        ? 'bg-red-200 text-red-800 cursor-not-allowed'
-                        : isSelected
-                        ? 'bg-blue-600 text-white'
-                        : isBlocked
-                        ? 'bg-gray-300 text-gray-700'
-                        : isPast
-                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                        : isToday
-                        ? 'bg-blue-100 text-blue-700 border-2 border-blue-500'
-                        : 'bg-white text-gray-900 hover:bg-gray-100 border border-gray-200'
-                    }`}
-                    title={
-                      isReserved
-                        ? 'Date réservée (non modifiable)'
-                        : isSelected
-                        ? 'Cliquez pour débloquer'
-                        : isBlocked
-                        ? 'Date bloquée - Cliquez pour débloquer'
-                        : 'Cliquez pour bloquer'
-                    }
+                    className={`aspect-square p-2 rounded-lg text-sm transition-colors hover:opacity-80 ${bgColor}`}
+                    title={titleText}
                   >
                     {date.getDate()}
                   </button>
                 );
               })}
+            </div>
+
+            {/* Instructions */}
+            <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-sm text-blue-800 font-medium mb-2">Comment utiliser le calendrier :</p>
+              <ul className="text-sm text-blue-700 space-y-1 list-disc list-inside">
+                <li>Cliquez sur une date disponible (blanche) pour la bloquer</li>
+                <li>Cliquez sur une date bloquée (gris foncé) pour la débloquer</li>
+                <li>Les dates réservées (rouge) ne peuvent pas être modifiées</li>
+                <li>N'oubliez pas de cliquer sur "Enregistrer" pour sauvegarder vos modifications</li>
+              </ul>
             </div>
 
             {/* Légende */}
@@ -293,7 +325,11 @@ const PropertyAvailabilityManager: React.FC<PropertyAvailabilityManagerProps> = 
                 <span>Sélectionné pour bloquer</span>
               </div>
               <div className="flex items-center space-x-2">
-                <div className="w-4 h-4 bg-gray-300 rounded"></div>
+                <div className="w-4 h-4 bg-orange-500 rounded"></div>
+                <span>Sélectionné pour débloquer</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <div className="w-4 h-4 bg-gray-400 rounded"></div>
                 <span>Bloqué manuellement</span>
               </div>
               <div className="flex items-center space-x-2">
@@ -313,8 +349,8 @@ const PropertyAvailabilityManager: React.FC<PropertyAvailabilityManagerProps> = 
             </button>
             <button
               onClick={saveBlockedDates}
-              disabled={loading}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 flex items-center space-x-2"
+              disabled={loading || selectedDates.length === 0}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center space-x-2"
             >
               {loading ? (
                 <>
@@ -324,7 +360,14 @@ const PropertyAvailabilityManager: React.FC<PropertyAvailabilityManagerProps> = 
               ) : (
                 <>
                   <Save className="w-4 h-4" />
-                  <span>Enregistrer</span>
+                  <span>
+                    Enregistrer
+                    {selectedDates.length > 0 && (
+                      <span className="ml-2 bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">
+                        {selectedDates.length} modification{selectedDates.length > 1 ? 's' : ''}
+                      </span>
+                    )}
+                  </span>
                 </>
               )}
             </button>
