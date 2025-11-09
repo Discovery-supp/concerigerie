@@ -34,8 +34,7 @@ export const reservationsService = {
         .from('reservations')
         .select(`
           *,
-          properties(*),
-          users!reservations_guest_id_fkey(*)
+          property:properties(*)
         `)
         .eq('guest_id', userId)
         .order('created_at', { ascending: false })
@@ -103,6 +102,73 @@ export const reservationsService = {
       return data
     } catch (error) {
       console.error('Erreur annulation réservation:', error)
+      throw error
+    }
+  },
+
+  // Demander l'annulation d'une réservation (pour les guests - notification à l'admin)
+  async requestCancellation(reservationId: string, reason?: string) {
+    try {
+      // Récupérer les informations de la réservation
+      const { data: reservation, error: resError } = await supabase
+        .from('reservations')
+        .select(`
+          *,
+          property:properties(*),
+          guest:user_profiles(*)
+        `)
+        .eq('id', reservationId)
+        .single()
+
+      if (resError) throw resError
+
+      // Trouver tous les admins
+      const { data: admins, error: adminError } = await supabase
+        .from('user_profiles')
+        .select('id')
+        .in('user_type', ['admin', 'super_admin'])
+
+      if (adminError) throw adminError
+
+      // Créer une notification pour chaque admin
+      if (admins && admins.length > 0) {
+        const notifications = admins.map(admin => ({
+          user_id: admin.id,
+          type: 'cancellation_request',
+          title: 'Demande d\'annulation de réservation',
+          message: `Un voyageur demande l'annulation de sa réservation #${reservationId.substring(0, 8)}.${reason ? ` Raison: ${reason}` : ''}`,
+          data: {
+            reservation_id: reservationId,
+            property_id: reservation.property_id,
+            guest_id: reservation.guest_id,
+            reason: reason || null,
+            reservation: reservation
+          },
+          is_read: false
+        }))
+
+        const { error: notifError } = await supabase
+          .from('notifications')
+          .insert(notifications)
+
+        if (notifError) throw notifError
+      }
+
+      // Mettre à jour la réservation avec le statut de demande d'annulation
+      const { data: updatedReservation, error: updateError } = await supabase
+        .from('reservations')
+        .update({ 
+          cancellation_reason: reason || 'Demande d\'annulation par le voyageur',
+          status: 'pending_cancellation' // Nouveau statut pour les demandes d'annulation
+        })
+        .eq('id', reservationId)
+        .select()
+        .single()
+
+      if (updateError) throw updateError
+      return updatedReservation
+    } catch (error) {
+      console.error('Erreur demande annulation réservation:', error)
       throw error
     }
   },

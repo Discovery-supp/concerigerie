@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Calendar, Users, CreditCard, Shield, CheckCircle, Clock } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import PaymentModal from './PaymentModal';
@@ -22,6 +23,7 @@ interface RealTimeBookingProps {
 }
 
 const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSuccess }) => {
+  const navigate = useNavigate();
   const [checkIn, setCheckIn] = useState('');
   const [checkOut, setCheckOut] = useState('');
   const [guests, setGuests] = useState(1);
@@ -194,7 +196,15 @@ const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSu
     return { nights, basePrice, discount, subtotal, cleaning, serviceFee, total };
   };
 
-  const handleBooking = () => {
+  const handleBooking = async () => {
+    // Vérifier que l'utilisateur est connecté (compte obligatoire)
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      alert('Vous devez créer un compte pour réserver. Veuillez vous connecter ou créer un compte.');
+      navigate('/login?redirect=/property/' + property.id);
+      return;
+    }
+
     if (availabilityStatus === 'available') {
       setShowPayment(true);
     }
@@ -213,7 +223,7 @@ const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSu
       const price = calculatePrice();
       if (!price) throw new Error('Calcul de prix invalide');
 
-      // Créer la réservation
+      // Créer la réservation avec statut 'pending' pour que l'hôte puisse la voir
       const { data: reservation, error } = await supabase
         .from('reservations')
         .insert({
@@ -225,8 +235,11 @@ const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSu
           children: 0,
           infants: 0,
           pets: 0,
+          subtotal: price.subtotal,
+          cleaning_fee: price.cleaning,
+          service_fee: price.serviceFee,
           total_amount: price.total,
-          status: 'confirmed',
+          status: 'pending', // Statut 'pending' pour que l'hôte puisse confirmer
           payment_method: paymentData.payment_method,
           payment_status: paymentData.payment_status,
           special_requests: ''
@@ -390,7 +403,7 @@ const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSu
               <span>${price.cleaning.toFixed(2)}</span>
             </div>
             <div className="flex justify-between text-sm">
-              <span>Frais de service</span>
+              <span>Frais de service (12%)</span>
               <span>${price.serviceFee.toFixed(2)}</span>
             </div>
             <div className="border-t pt-2 flex justify-between font-bold text-lg">

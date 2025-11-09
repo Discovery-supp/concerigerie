@@ -22,6 +22,9 @@ const MyReservationsPage: React.FC = () => {
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'upcoming' | 'past' | 'cancelled'>('all');
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [selectedReservation, setSelectedReservation] = useState<string | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
 
   useEffect(() => {
     loadReservations();
@@ -279,19 +282,21 @@ const MyReservationsPage: React.FC = () => {
                     >
                       Voir les détails
                     </button>
-                    {reservation.status !== 'cancelled' && reservation.status !== 'completed' && (
+                    {reservation.status !== 'cancelled' && reservation.status !== 'completed' && reservation.status !== 'pending_cancellation' && (
                       <button
                         onClick={() => {
-                          if (confirm('Êtes-vous sûr de vouloir annuler cette réservation ?')) {
-                            reservationsService.cancelReservation(reservation.id).then(() => {
-                              loadReservations();
-                            });
-                          }
+                          setSelectedReservation(reservation.id);
+                          setShowCancelModal(true);
                         }}
                         className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
                       >
-                        Annuler la réservation
+                        Demander l'annulation
                       </button>
+                    )}
+                    {reservation.status === 'pending_cancellation' && (
+                      <div className="px-4 py-2 bg-yellow-100 text-yellow-800 rounded-lg text-sm">
+                        Demande d'annulation en attente de traitement par l'administration
+                      </div>
                     )}
                   </div>
                 </div>
@@ -300,6 +305,61 @@ const MyReservationsPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Modal de demande d'annulation */}
+      {showCancelModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-xl font-semibold mb-4">Demander l'annulation</h3>
+            <p className="text-gray-600 mb-4">
+              Votre demande d'annulation sera envoyée à l'administration pour traitement.
+            </p>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Raison de l'annulation (optionnel)
+              </label>
+              <textarea
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                rows={4}
+                placeholder="Expliquez la raison de votre demande d'annulation..."
+              />
+            </div>
+            <div className="flex space-x-3">
+              <button
+                onClick={async () => {
+                  if (selectedReservation) {
+                    try {
+                      await reservationsService.requestCancellation(selectedReservation, cancelReason);
+                      alert('Votre demande d\'annulation a été envoyée à l\'administration. Vous serez notifié de la décision.');
+                      setShowCancelModal(false);
+                      setSelectedReservation(null);
+                      setCancelReason('');
+                      loadReservations();
+                    } catch (error: any) {
+                      alert('Erreur lors de la demande d\'annulation: ' + error.message);
+                    }
+                  }
+                }}
+                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+              >
+                Envoyer la demande
+              </button>
+              <button
+                onClick={() => {
+                  setShowCancelModal(false);
+                  setSelectedReservation(null);
+                  setCancelReason('');
+                }}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Annuler
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

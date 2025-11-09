@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Star, MapPin, Users, Bed, Bath, Wifi, Car, School as Pool, ChevronLeft, ChevronRight, Calendar, CreditCard, ArrowLeft } from 'lucide-react';
+import { Star, MapPin, Users, Bed, Bath, Wifi, Car, School as Pool, ChevronLeft, ChevronRight, Calendar, CreditCard, ArrowLeft, MessageCircle } from 'lucide-react';
 import OptimizedImage from '../components/Common/OptimizedImage';
 import propertiesService from '../services/properties';
 import RealTimeBooking from '../components/Booking/RealTimeBooking';
@@ -14,6 +14,7 @@ const PropertyDetailPage: React.FC = () => {
   const [property, setProperty] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [reviews, setReviews] = useState<any[]>([]);
+  const [hostInfo, setHostInfo] = useState<any>(null);
 
   useEffect(() => {
     if (id) {
@@ -61,6 +62,19 @@ const PropertyDetailPage: React.FC = () => {
         .select('*, reviewer:user_profiles!reviews_reviewer_id_fkey(first_name, last_name)')
         .eq('property_id', id)
         .order('created_at', { ascending: false });
+
+      // Charger les informations de l'hôte (année d'inscription)
+      if (data.owner_id) {
+        const { data: hostData } = await supabase
+          .from('user_profiles')
+          .select('id, first_name, last_name, created_at')
+          .eq('id', data.owner_id)
+          .single();
+        
+        if (hostData) {
+          setHostInfo(hostData);
+        }
+      }
 
       // Charger les légendes des images
       let imageCaptions: { url: string; caption: string }[] = [];
@@ -319,10 +333,22 @@ const PropertyDetailPage: React.FC = () => {
                 <div className="w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center">
                   <Users className="w-8 h-8 text-primary" />
                 </div>
-                <div>
-                  <h3 className="text-xl font-semibold text-primary">
+                <div className="flex-1">
+                  <h3 className="text-xl font-semibold text-primary mb-2">
                     Hébergement proposé par l'hôte
                   </h3>
+                  {hostInfo && (
+                    <div className="text-sm text-secondary mb-2">
+                      <p className="font-medium">
+                        {hostInfo.first_name} {hostInfo.last_name}
+                      </p>
+                      {hostInfo.created_at && (
+                        <p className="text-gray-500">
+                          Membre depuis {new Date(hostInfo.created_at).getFullYear()}
+                        </p>
+                      )}
+                    </div>
+                  )}
                   <div className="flex items-center space-x-4 text-secondary text-sm">
                     <span>{property.guests} voyageurs</span>
                     <span>{property.bedrooms} chambres</span>
@@ -330,6 +356,15 @@ const PropertyDetailPage: React.FC = () => {
                     <span>{property.bathrooms} salles de bain</span>
                   </div>
                 </div>
+              </div>
+              <div className="mt-4 pt-4 border-t border-gray-200">
+                <button
+                  onClick={() => navigate('/messaging')}
+                  className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center justify-center space-x-2"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                  <span>Contacter l'hôte</span>
+                </button>
               </div>
             </div>
 

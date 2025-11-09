@@ -143,8 +143,8 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
         .from('messages')
         .select(`
           *,
-          sender:user_profiles!messages_sender_id_fkey(first_name, last_name, user_type),
-          receiver:user_profiles!messages_receiver_id_fkey(first_name, last_name, user_type)
+          sender:user_profiles!sender_id(first_name, last_name, user_type),
+          receiver:user_profiles!receiver_id(first_name, last_name, user_type)
         `)
         .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`);
 
@@ -165,13 +165,19 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
       const conversationMap = new Map<string, Conversation>();
       
       conversationsData?.forEach((message: any) => {
+        // Vérifier que sender et receiver existent
+        if (!message.sender || !message.receiver) {
+          console.warn('Message avec sender ou receiver manquant:', message);
+          return;
+        }
+
         const otherUserId = message.sender_id === user.id ? message.receiver_id : message.sender_id;
         const otherUserName = message.sender_id === user.id 
-          ? `${message.receiver.first_name} ${message.receiver.last_name}`
-          : `${message.sender.first_name} ${message.sender.last_name}`;
+          ? `${message.receiver?.first_name || ''} ${message.receiver?.last_name || ''}`.trim() || 'Utilisateur inconnu'
+          : `${message.sender?.first_name || ''} ${message.sender?.last_name || ''}`.trim() || 'Utilisateur inconnu';
         const otherUserType = message.sender_id === user.id 
-          ? message.receiver.user_type
-          : message.sender.user_type;
+          ? message.receiver?.user_type
+          : message.sender?.user_type;
 
         // Filtrer selon les règles de communication
         if (userType === 'owner' || userType === 'traveler') {
@@ -193,7 +199,7 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
         }
 
         const conversation = conversationMap.get(otherUserId)!;
-        if (message.created_at > conversation.last_message.created_at) {
+        if (new Date(message.created_at) > new Date(conversation.last_message.created_at)) {
           conversation.last_message = message;
         }
         if (!message.is_read && message.receiver_id === user.id) {
@@ -218,8 +224,8 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
         .from('messages')
         .select(`
           *,
-          sender:user_profiles!messages_sender_id_fkey(first_name, last_name, user_type),
-          receiver:user_profiles!messages_receiver_id_fkey(first_name, last_name, user_type)
+          sender:user_profiles!sender_id(first_name, last_name, user_type),
+          receiver:user_profiles!receiver_id(first_name, last_name, user_type)
         `)
         .or(`and(sender_id.eq.${user.id},receiver_id.eq.${conversationId}),and(sender_id.eq.${conversationId},receiver_id.eq.${user.id})`)
         .order('created_at', { ascending: true });
@@ -272,6 +278,19 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
         }
       }
 
+      // Vérifier que le destinataire existe dans user_profiles
+      const { data: receiverCheck } = await supabase
+        .from('user_profiles')
+        .select('id')
+        .eq('id', selectedConversation)
+        .single();
+
+      if (!receiverCheck) {
+        alert('Destinataire introuvable. Veuillez réessayer.');
+        setSending(false);
+        return;
+      }
+
       // Insérer le message dans la base de données
       const { data: insertedMessage, error } = await supabase
         .from('messages')
@@ -282,17 +301,28 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
           content: newMessage.trim(),
           is_read: false
         }])
-        .select()
+        .select(`
+          *,
+          sender:user_profiles!sender_id(first_name, last_name, user_type),
+          receiver:user_profiles!receiver_id(first_name, last_name, user_type)
+        `)
         .single();
 
       if (error) {
-        console.error('Erreur détaillée:', error);
-        throw error;
+        console.error('Erreur détaillée insertion message:', error);
+        alert(`Erreur lors de l'envoi: ${error.message}`);
+        setSending(false);
+        return;
       }
 
       if (!insertedMessage) {
-        throw new Error('Le message n\'a pas été enregistré');
+        console.error('Message non inséré');
+        alert('Le message n\'a pas été enregistré. Veuillez réessayer.');
+        setSending(false);
+        return;
       }
+
+      console.log('Message inséré avec succès:', insertedMessage);
 
       // Réinitialiser le formulaire
       setNewMessage('');
