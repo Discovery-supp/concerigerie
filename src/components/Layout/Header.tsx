@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { Menu, X, User, Calendar, Home, Users, Settings, Bell } from 'lucide-react';
 import Logo from '../../assets/logo.svg';
 
@@ -9,8 +9,10 @@ interface HeaderProps {
 }
 
 const Header: React.FC<HeaderProps> = ({ currentUser, userType }) => {
+  const location = useLocation();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const isDashboardPage = location.pathname.includes('/dashboard');
 
   const getMenuItems = () => {
     if (!currentUser) return [];
@@ -49,27 +51,29 @@ const Header: React.FC<HeaderProps> = ({ currentUser, userType }) => {
             </Link>
           </div>
 
-          {/* Navigation Desktop */}
-          <nav className="hidden md:flex space-x-8">
-            <Link to="/" className="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors">
-              Accueil
-            </Link>
-            <Link to="/properties" className="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors">
-              Propriétés
-            </Link>
-            <Link to="/services" className="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors">
-              Nos Services
-            </Link>
-            <Link to="/become-host" className="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors">
-              Devenir Hôte
-            </Link>
-            <Link to="/become-partner" className="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors">
-              Devenir Partenaire
-            </Link>
-            <Link to="/become-provider" className="text-secondary hover:text-primary px-3 py-2 rounded-md text-sm font-medium transition-colors">
-              Devenir Prestataire
-            </Link>
-          </nav>
+          {/* Navigation Desktop - Masquer sur les pages dashboard */}
+          {!isDashboardPage && (
+            <nav className="hidden md:flex space-x-8">
+              <Link to="/" className="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors">
+                Accueil
+              </Link>
+              <Link to="/properties" className="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors">
+                Propriétés
+              </Link>
+              <Link to="/services" className="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors">
+                Nos Services
+              </Link>
+              <Link to="/become-host" className="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors">
+                Devenir Hôte
+              </Link>
+              <Link to="/become-partner" className="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors">
+                Devenir Partenaire
+              </Link>
+              <Link to="/become-provider" className="text-secondary hover:text-primary px-3 py-2 rounded-md text-sm font-medium transition-colors">
+                Devenir Prestataire
+              </Link>
+            </nav>
+          )}
 
           {/* Actions */}
           <div className="flex items-center space-x-4">
@@ -80,8 +84,8 @@ const Header: React.FC<HeaderProps> = ({ currentUser, userType }) => {
                   <Bell className="w-5 h-5" />
                 </button>
 
-                {/* Dashboard Links */}
-                {getMenuItems().length > 0 && (
+                {/* Dashboard Links - Masquer sur les pages dashboard */}
+                {getMenuItems().length > 0 && !isDashboardPage && (
                   <div className="hidden md:flex space-x-2">
                     {getMenuItems().map((item, index) => (
                       <Link
@@ -112,6 +116,9 @@ const Header: React.FC<HeaderProps> = ({ currentUser, userType }) => {
                   
                   {isUserMenuOpen && (
                     <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 border border-light-gray">
+                      <Link to="/settings" className="block px-4 py-2 text-sm text-secondary hover:bg-gray-100">
+                        Paramètres
+                      </Link>
                       <Link to="/profile" className="block px-4 py-2 text-sm text-secondary hover:bg-gray-100">
                         Mon Profil
                       </Link>

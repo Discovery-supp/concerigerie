@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import PropertyManagementForm from '../components/Forms/PropertyManagementForm';
-import { ArrowLeft, Plus, Edit, Trash2, Eye, EyeOff } from 'lucide-react';
+import PropertyAvailabilityManager from '../components/Dashboard/PropertyAvailabilityManager';
+import { ArrowLeft, Plus, Edit, Trash2, Eye, EyeOff, Calendar } from 'lucide-react';
 
 interface Property {
   id: string;
@@ -22,6 +23,7 @@ const PropertyManagementPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingProperty, setEditingProperty] = useState<string | null>(null);
+  const [availabilityPropertyId, setAvailabilityPropertyId] = useState<string | null>(null);
   const STORAGE_BUCKET = 'public';
 
   React.useEffect(() => {
@@ -347,19 +349,19 @@ const PropertyManagementPage: React.FC = () => {
                             <Edit className="w-4 h-4" />
                           </button>
                           <button
+                            onClick={() => setAvailabilityPropertyId(property.id)}
+                            className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg"
+                            title="Gérer la disponibilité"
+                          >
+                            <Calendar className="w-4 h-4" />
+                          </button>
+                          <button
                             onClick={() => deleteProperty(property.id)}
                             className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
                             title="Supprimer"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
-                        <button
-                          onClick={() => forceDeleteProperty(property.id)}
-                          className="p-2 text-red-700 hover:bg-red-50 rounded-lg"
-                          title="Supprimer (forcer)"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
                         </div>
                       </div>
                     </div>
@@ -369,6 +371,17 @@ const PropertyManagementPage: React.FC = () => {
             </div>
           )}
         </div>
+
+        {/* Modal de gestion de disponibilité */}
+        {availabilityPropertyId && (
+          <PropertyAvailabilityManager
+            propertyId={availabilityPropertyId}
+            onClose={() => {
+              setAvailabilityPropertyId(null);
+              loadProperties();
+            }}
+          />
+        )}
       </div>
     </div>
   );

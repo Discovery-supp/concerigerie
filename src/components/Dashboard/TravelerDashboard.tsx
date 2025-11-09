@@ -5,7 +5,7 @@ import StatCard from './StatCard';
 import QuickActionCard from './QuickActionCard';
 import ReservationsList from './ReservationsList';
 import MessageBox from './MessageBox';
-import { Calendar, Home, Search, MessageCircle, Gift, HelpCircle, Star } from 'lucide-react';
+import { Calendar, Home, Search, MessageCircle, Gift, HelpCircle, Star, Settings } from 'lucide-react';
 
 interface TravelerDashboardProps {
   userId: string;
@@ -141,6 +141,13 @@ const TravelerDashboard: React.FC<TravelerDashboardProps> = ({ userId }) => {
               icon={<Gift className="w-6 h-6" />}
               onClick={() => setActiveTab('offers')}
               color="purple"
+            />
+            <QuickActionCard
+              title="Paramètres"
+              description="Gérer mon compte"
+              icon={<Settings className="w-6 h-6" />}
+              onClick={() => navigate('/settings')}
+              color="gray"
             />
           </div>
         </>

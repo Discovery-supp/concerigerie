@@ -110,7 +110,7 @@ const HostDashboard: React.FC = () => {
 
       setProperties(hostProperties || []);
 
-      // Charger les réservations
+      // Charger les réservations - Les hôtes voient seulement les demandes en attente pour confirmation
       const propertyIds = hostProperties?.map(p => p.id) || [];
       let reservationsData: any[] = [];
       
@@ -123,6 +123,7 @@ const HostDashboard: React.FC = () => {
             properties!reservations_property_id_fkey(title)
           `)
           .in('property_id', propertyIds)
+          .eq('status', 'pending') // Seulement les réservations en attente
           .order('created_at', { ascending: false });
 
         reservationsData = reservations || [];
@@ -312,20 +313,19 @@ const HostDashboard: React.FC = () => {
           <div className="bg-white rounded-lg shadow-sm border">
             <div className="px-6 py-4 border-b border-gray-200">
               <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-gray-900">Réservations récentes</h2>
-                <select
-                  value={selectedPeriod}
-                  onChange={(e) => setSelectedPeriod(e.target.value)}
-                  className="text-sm border border-gray-300 rounded-md px-3 py-1"
-                >
-                  <option value="week">Cette semaine</option>
-                  <option value="month">Ce mois</option>
-                  <option value="all">Toutes</option>
-                </select>
+                <h2 className="text-lg font-semibold text-gray-900">Demandes de réservation en attente</h2>
+                <span className="text-sm text-gray-500">
+                  {reservations.filter(r => r.status === 'pending').length} en attente
+                </span>
               </div>
             </div>
             <div className="divide-y divide-gray-200">
-              {reservations.slice(0, 5).map((reservation) => (
+              {reservations.filter(r => r.status === 'pending').length === 0 ? (
+                <div className="p-6 text-center text-gray-500">
+                  Aucune demande de réservation en attente
+                </div>
+              ) : (
+                reservations.filter(r => r.status === 'pending').map((reservation) => (
                 <div key={reservation.id} className="p-6">
                   <div className="flex items-center justify-between">
                     <div className="flex-1">
@@ -350,12 +350,49 @@ const HostDashboard: React.FC = () => {
                     <div className="flex items-center space-x-2">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(reservation.status)}`}>
                         {getStatusIcon(reservation.status)}
-                        <span className="ml-1">{reservation.status}</span>
+                        <span className="ml-1">En attente</span>
                       </span>
+                      <button
+                        onClick={async () => {
+                          try {
+                            const { error } = await supabase
+                              .from('reservations')
+                              .update({ status: 'confirmed' })
+                              .eq('id', reservation.id);
+                            if (!error) {
+                              loadDashboardData();
+                            }
+                          } catch (error) {
+                            console.error('Erreur confirmation:', error);
+                          }
+                        }}
+                        className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 transition-colors"
+                      >
+                        Confirmer
+                      </button>
+                      <button
+                        onClick={async () => {
+                          try {
+                            const { error } = await supabase
+                              .from('reservations')
+                              .update({ status: 'cancelled' })
+                              .eq('id', reservation.id);
+                            if (!error) {
+                              loadDashboardData();
+                            }
+                          } catch (error) {
+                            console.error('Erreur annulation:', error);
+                          }
+                        }}
+                        className="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 transition-colors"
+                      >
+                        Refuser
+                      </button>
                     </div>
                   </div>
                 </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
         </div>
@@ -434,6 +471,13 @@ const HostDashboard: React.FC = () => {
             icon={<BarChart3 className="w-6 h-6" />}
             color="orange"
             onClick={() => navigate('/analytics')}
+          />
+          <QuickActionCard
+            title="Paramètres"
+            description="Gérer mon compte"
+            icon={<Settings className="w-6 h-6" />}
+            onClick={() => navigate('/settings')}
+            color="gray"
           />
         </div>
       </div>

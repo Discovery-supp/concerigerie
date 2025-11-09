@@ -18,24 +18,33 @@ interface FinancialReportsProps {
 const FinancialReports: React.FC<FinancialReportsProps> = ({ userId }) => {
   const [reports, setReports] = useState<FinancialReport[]>([]);
   const [loading, setLoading] = useState(true);
-  const [period, setPeriod] = useState<'day' | 'month' | 'year' | 'all'>('month');
+  const [period, setPeriod] = useState<'day' | 'month' | 'year' | 'custom' | 'all'>('month');
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
   useEffect(() => {
     loadFinancialData();
-  }, [period]);
+  }, [period, startDate, endDate]);
 
   const loadFinancialData = async () => {
     try {
       setLoading(true);
 
-      // Charger toutes les réservations complétées
-      const { data: reservations } = await supabase
+      let query = supabase
         .from('reservations')
         .select(`
           *,
           property:properties!inner(owner_id, price_per_night)
         `)
         .eq('status', 'completed');
+
+      // Filtrer par période personnalisée si sélectionnée
+      if (period === 'custom' && startDate && endDate) {
+        query = query.gte('created_at', startDate).lte('created_at', endDate);
+      }
+
+      const { data: reservations } = await query;
 
       // Charger les hôtes avec leurs forfaits
       const { data: hosts } = await supabase
@@ -58,18 +67,23 @@ const FinancialReports: React.FC<FinancialReportsProps> = ({ userId }) => {
       const date = new Date(res.created_at);
       let key: string;
 
-      switch (period) {
-        case 'day':
-          key = date.toISOString().split('T')[0];
-          break;
-        case 'month':
-          key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-          break;
-        case 'year':
-          key = String(date.getFullYear());
-          break;
-        default:
-          key = 'all';
+      if (period === 'custom' && startDate && endDate) {
+        // Pour période personnalisée, grouper par jour
+        key = date.toISOString().split('T')[0];
+      } else {
+        switch (period) {
+          case 'day':
+            key = date.toISOString().split('T')[0];
+            break;
+          case 'month':
+            key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+            break;
+          case 'year':
+            key = String(date.getFullYear());
+            break;
+          default:
+            key = 'all';
+        }
       }
 
       if (!acc[key]) {
@@ -166,14 +180,53 @@ const FinancialReports: React.FC<FinancialReportsProps> = ({ userId }) => {
           <div className="flex space-x-2">
             <select
               value={period}
-              onChange={(e) => setPeriod(e.target.value as any)}
+              onChange={(e) => {
+                setPeriod(e.target.value as any);
+                if (e.target.value === 'custom') {
+                  setShowDatePicker(true);
+                } else {
+                  setShowDatePicker(false);
+                  setStartDate('');
+                  setEndDate('');
+                }
+              }}
               className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
             >
               <option value="day">Par jour</option>
               <option value="month">Par mois</option>
               <option value="year">Par année</option>
+              <option value="custom">Période personnalisée</option>
               <option value="all">Toutes périodes</option>
             </select>
+            {showDatePicker && (
+              <div className="flex space-x-2 items-center">
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+                  placeholder="Date début"
+                />
+                <span className="text-gray-500">à</span>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+                  placeholder="Date fin"
+                />
+                <button
+                  onClick={() => {
+                    if (startDate && endDate) {
+                      loadFinancialData();
+                    }
+                  }}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  <Calendar className="w-4 h-4" />
+                </button>
+              </div>
+            )}
             <button
               onClick={handleExportHosts}
               className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-light transition-colors flex items-center space-x-2"

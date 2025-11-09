@@ -77,7 +77,18 @@ const PropertyDetailPage: React.FC = () => {
         checkIn: data.check_in_time || '14:00',
         checkOut: data.check_out_time || '11:00',
         rules: Array.isArray(data.rules) ? data.rules : (data.rules ? [data.rules] : []),
-        amenities: Array.isArray(data.amenities) ? data.amenities : []
+        amenities: Array.isArray(data.amenities) 
+          ? data.amenities 
+          : (typeof data.amenities === 'string' 
+              ? (() => {
+                  try {
+                    const parsed = JSON.parse(data.amenities);
+                    return Array.isArray(parsed) ? parsed : [];
+                  } catch {
+                    return data.amenities ? [data.amenities] : [];
+                  }
+                })()
+              : [])
       });
       
       setReviews(reviewsData || []);
@@ -294,22 +305,31 @@ const PropertyDetailPage: React.FC = () => {
             </div>
 
             {/* Équipements */}
-            <div className="bg-white rounded-2xl p-6 shadow-lg">
-              <h3 className="text-xl font-semibold font-heading text-primary mb-4">
-                Équipements proposés
-              </h3>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                {property.amenities.map((amenity, index) => {
-                  const amenityInfo = amenityIcons[amenity as keyof typeof amenityIcons];
-                  return amenityInfo ? (
-                    <div key={index} className="flex items-center space-x-3">
-                      <amenityInfo.icon className="w-5 h-5 text-primary" />
-                      <span className="text-secondary">{amenityInfo.label}</span>
-                    </div>
-                  ) : null;
-                })}
+            {property.amenities && property.amenities.length > 0 && (
+              <div className="bg-white rounded-2xl p-6 shadow-lg">
+                <h3 className="text-xl font-semibold font-heading text-primary mb-4">
+                  Équipements proposés
+                </h3>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  {property.amenities.map((amenity: string, index: number) => {
+                    const amenityInfo = amenityIcons[amenity as keyof typeof amenityIcons];
+                    return amenityInfo ? (
+                      <div key={index} className="flex items-center space-x-3">
+                        <amenityInfo.icon className="w-5 h-5 text-primary" />
+                        <span className="text-secondary">{amenityInfo.label}</span>
+                      </div>
+                    ) : (
+                      <div key={index} className="flex items-center space-x-3">
+                        <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center">
+                          <div className="w-2 h-2 bg-primary rounded-full"></div>
+                        </div>
+                        <span className="text-secondary">{amenity}</span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Règles de la maison */}
             <div className="bg-white rounded-2xl p-6 shadow-lg">

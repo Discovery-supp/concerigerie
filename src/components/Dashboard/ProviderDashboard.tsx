@@ -157,6 +157,13 @@ const ProviderDashboard: React.FC<ProviderDashboardProps> = ({ userId }) => {
               onClick={() => navigate('/become-provider')}
               color="gray"
             />
+            <QuickActionCard
+              title="Paramètres du compte"
+              description="Modifier mes informations"
+              icon={<Settings className="w-6 h-6" />}
+              onClick={() => navigate('/settings')}
+              color="blue"
+            />
           </div>
         </>
       )}

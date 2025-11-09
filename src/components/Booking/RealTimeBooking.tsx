@@ -29,8 +29,10 @@ const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSu
   const [loading, setLoading] = useState(false);
   const [showPayment, setShowPayment] = useState(false);
   const [availabilityStatus, setAvailabilityStatus] = useState<'available' | 'unavailable' | 'checking'>('checking');
+  const [isOwner, setIsOwner] = useState(false);
 
   useEffect(() => {
+    checkIfOwner();
     loadBlockedDates();
     
     // S'abonner aux changements de réservations en temps réel
@@ -50,6 +52,25 @@ const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSu
     };
   }, [property.id]);
 
+  const checkIfOwner = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: propertyData } = await supabase
+        .from('properties')
+        .select('owner_id')
+        .eq('id', property.id)
+        .single();
+
+      if (propertyData && propertyData.owner_id === user.id) {
+        setIsOwner(true);
+      }
+    } catch (error) {
+      console.error('Erreur vérification propriétaire:', error);
+    }
+  };
+
   useEffect(() => {
     if (checkIn && checkOut) {
       checkAvailability();
@@ -58,21 +79,41 @@ const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSu
 
   const loadBlockedDates = async () => {
     try {
+      // Charger les dates bloquées manuellement depuis la propriété
+      const { data: propertyData } = await supabase
+        .from('properties')
+        .select('blocked_dates')
+        .eq('id', property.id)
+        .single();
+
+      const manuallyBlocked: string[] = [];
+      if (propertyData?.blocked_dates) {
+        const dates = typeof propertyData.blocked_dates === 'string'
+          ? JSON.parse(propertyData.blocked_dates)
+          : propertyData.blocked_dates;
+        if (Array.isArray(dates)) {
+          manuallyBlocked.push(...dates);
+        }
+      }
+
+      // Charger les dates bloquées par les réservations
       const { data } = await supabase
         .from('reservations')
         .select('check_in, check_out, status')
         .eq('property_id', property.id)
         .in('status', ['confirmed', 'pending']);
 
-      const blocked: string[] = [];
+      const reservationBlocked: string[] = [];
       data?.forEach(reservation => {
         const start = new Date(reservation.check_in);
         const end = new Date(reservation.check_out);
         for (let d = new Date(start); d < end; d.setDate(d.getDate() + 1)) {
-          blocked.push(d.toISOString().split('T')[0]);
+          reservationBlocked.push(d.toISOString().split('T')[0]);
         }
       });
-      setBlockedDates(blocked);
+
+      // Combiner les deux listes
+      setBlockedDates([...new Set([...manuallyBlocked, ...reservationBlocked])]);
     } catch (error) {
       console.error('Erreur chargement dates bloquées:', error);
     }
@@ -93,20 +134,34 @@ const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSu
         return;
       }
 
-      // Vérifier les conflits de réservation
-      const { data: conflicts } = await supabase
-        .from('reservations')
-        .select('id')
-        .eq('property_id', property.id)
-        .in('status', ['confirmed', 'pending'])
-        .or(`check_in.lte.${checkOut},check_out.gte.${checkIn}`)
-        .limit(1);
-
-      if (conflicts && conflicts.length > 0) {
-        setAvailabilityStatus('unavailable');
-      } else {
-        setAvailabilityStatus('available');
+      // Vérifier les dates bloquées manuellement
+      const checkInDateObj = new Date(checkIn);
+      const checkOutDateObj = new Date(checkOut);
+      for (let d = new Date(checkInDateObj); d < checkOutDateObj; d.setDate(d.getDate() + 1)) {
+        const dateString = d.toISOString().split('T')[0];
+        if (blockedDates.includes(dateString)) {
+          setAvailabilityStatus('unavailable');
+          return;
+        }
       }
+
+      // Vérifier les conflits de réservation (sauf si c'est le propriétaire)
+      if (!isOwner) {
+        const { data: conflicts } = await supabase
+          .from('reservations')
+          .select('id')
+          .eq('property_id', property.id)
+          .in('status', ['confirmed', 'pending'])
+          .or(`check_in.lte.${checkOut},check_out.gte.${checkIn}`)
+          .limit(1);
+
+        if (conflicts && conflicts.length > 0) {
+          setAvailabilityStatus('unavailable');
+          return;
+        }
+      }
+
+      setAvailabilityStatus('available');
     } catch (error) {
       console.error('Erreur vérification disponibilité:', error);
       setAvailabilityStatus('unavailable');
@@ -215,6 +270,13 @@ const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSu
 
   return (
     <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-200">
+      {isOwner && (
+        <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+          <p className="text-sm text-blue-800">
+            <strong>Vous êtes le propriétaire de cette propriété.</strong> Vous pouvez faire une réservation pour tester ou bloquer des dates.
+          </p>
+        </div>
+      )}
       <div className="flex items-center justify-between mb-6">
         <div>
           <p className="text-2xl font-bold text-gray-900">

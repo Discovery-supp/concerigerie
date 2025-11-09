@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { ArrowLeft, ArrowRight, Home, Image, DollarSign, CheckCircle } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Home, Image, DollarSign, CheckCircle, MapPin } from 'lucide-react';
 
 const AddPropertyPage: React.FC = () => {
   const navigate = useNavigate();
@@ -20,6 +20,9 @@ const AddPropertyPage: React.FC = () => {
     
     // Étape 2: Détails de la propriété
     address: '',
+    commune: '',
+    latitude: null as number | null,
+    longitude: null as number | null,
     surface: 0,
     bathrooms: 0,
     check_in_time: '14:00',
@@ -34,6 +37,7 @@ const AddPropertyPage: React.FC = () => {
     
     // Étape 4: Photos
     images: [] as string[],
+    image_captions: [] as { url: string; caption: string }[],
     
     // Étape 5: Tarifs et disponibilités
     price_per_night: 0,
@@ -81,9 +85,9 @@ const AddPropertyPage: React.FC = () => {
   ];
 
   const cancellationPolicies = [
-    { value: 'flexible', label: 'Flexible - Remboursement complet jusqu\'à 24h avant', description: 'Annulation gratuite jusqu\'à 24h avant l\'arrivée' },
-    { value: 'moderate', label: 'Modérée - Remboursement complet jusqu\'à 5 jours avant', description: 'Remboursement complet jusqu\'à 5 jours avant l\'arrivée' },
-    { value: 'strict', label: 'Stricte - Remboursement de 50% jusqu\'à 7 jours avant', description: 'Remboursement de 50% jusqu\'à 7 jours avant l\'arrivée, puis aucun remboursement' }
+    { value: 'flexible', label: 'Flexible - Remboursement intégral jusqu\'à 7 jours avant', description: 'Remboursement intégral jusqu\'à 7 jours avant l\'arrivée' },
+    { value: 'moderate', label: 'Modérée - Remboursement de 50% jusqu\'à 5 jours avant', description: 'Remboursement de 50% jusqu\'à 5 jours avant l\'arrivée' },
+    { value: 'strict', label: 'Stricte - Remboursement intégral jusqu\'à 24h avant', description: 'Remboursement intégral jusqu\'à 24h avant l\'arrivée, puis aucun remboursement' }
   ];
 
   const handleInputChange = (field: string, value: any) => {
@@ -249,8 +253,13 @@ const AddPropertyPage: React.FC = () => {
 
     if (step === 2) {
       if (!formData.address.trim()) newErrors.address = 'Adresse requise';
+      if (!formData.commune?.trim()) newErrors.commune = 'Commune requise';
       if (formData.surface <= 0) newErrors.surface = 'Superficie requise';
       if (formData.bathrooms < 0) newErrors.bathrooms = 'Nombre de salles de bain invalide';
+    }
+
+    if (step === 4) {
+      if (formData.images.length === 0) newErrors.images = 'Au moins une photo est requise';
     }
 
     if (step === 5) {
@@ -308,12 +317,20 @@ const AddPropertyPage: React.FC = () => {
       console.log('Images à sauvegarder:', imagesArray);
       console.log('Nombre d\'images:', imagesArray.length);
       
+      // Construire l'adresse complète avec commune
+      const fullAddress = formData.commune 
+        ? `${formData.address}, ${formData.commune}`
+        : formData.address;
+
       const insertData = {
         owner_id: user.id,
         type: formData.property_type,
         title: formData.title,
         description: formData.description,
-        address: formData.address,
+        address: fullAddress,
+        commune: formData.commune || null,
+        latitude: formData.latitude,
+        longitude: formData.longitude,
         surface: formData.surface,
         max_guests: formData.max_guests,
         bedrooms: formData.bedrooms,
@@ -323,12 +340,13 @@ const AddPropertyPage: React.FC = () => {
         cleaning_fee: formData.cleaning_fee || 0,
         min_nights: formData.min_nights,
         max_nights: formData.max_nights,
-        amenities: formData.amenities.length > 0 ? formData.amenities : [],
-        images: imagesArray, // Utiliser directement le tableau
+        amenities: Array.isArray(formData.amenities) && formData.amenities.length > 0 ? formData.amenities : [],
+        images: imagesArray,
+        image_captions: formData.image_captions.length > 0 ? JSON.stringify(formData.image_captions) : null,
         cancellation_policy: formData.cancellation_policy,
         check_in_time: formData.check_in_time,
         check_out_time: formData.check_out_time,
-        is_published: false, // L'hôte doit publier manuellement
+        is_published: false,
         rules: formData.rules.length > 0 ? formData.rules : (formData.house_rules_text ? [formData.house_rules_text] : []),
         category: formData.property_type.toLowerCase()
       };
@@ -538,7 +556,7 @@ const AddPropertyPage: React.FC = () => {
                   type="text"
                   value={formData.address}
                   onChange={(e) => handleInputChange('address', e.target.value)}
-                  placeholder="Ex: 123 Rue de la Plage, 75001 Paris, France"
+                  placeholder="Ex: 123 Rue de la Plage"
                   className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary ${
                     errors.address ? 'border-red-500' : 'border-gray-300'
                   }`}
@@ -547,6 +565,75 @@ const AddPropertyPage: React.FC = () => {
                   <p className="text-red-500 text-sm mt-1">{errors.address}</p>
                 )}
               </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Commune *
+                </label>
+                <input
+                  type="text"
+                  value={formData.commune}
+                  onChange={(e) => handleInputChange('commune', e.target.value)}
+                  placeholder="Ex: Paris, Abidjan, etc."
+                  className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary ${
+                    errors.commune ? 'border-red-500' : 'border-gray-300'
+                  }`}
+                />
+                {errors.commune && (
+                  <p className="text-red-500 text-sm mt-1">{errors.commune}</p>
+                )}
+              </div>
+
+              {(formData.address || formData.commune) && (
+                <div className="mt-4">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const fullAddress = `${formData.address}, ${formData.commune}`;
+                      try {
+                        // Utiliser l'API de géocodage (exemple avec Nominatim)
+                        const response = await fetch(
+                          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(fullAddress)}&limit=1`
+                        );
+                        const data = await response.json();
+                        if (data && data.length > 0) {
+                          handleInputChange('latitude', parseFloat(data[0].lat));
+                          handleInputChange('longitude', parseFloat(data[0].lon));
+                          alert('Localisation trouvée ! Vous pouvez voir l\'emplacement sur la carte.');
+                        } else {
+                          alert('Adresse non trouvée. Veuillez vérifier l\'adresse.');
+                        }
+                      } catch (error) {
+                        console.error('Erreur géocodage:', error);
+                        alert('Erreur lors de la recherche de l\'adresse.');
+                      }
+                    }}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+                  >
+                    <MapPin className="w-4 h-4" />
+                    <span>Localiser sur la carte</span>
+                  </button>
+                  {formData.latitude && formData.longitude && (
+                    <div className="mt-4">
+                      <iframe
+                        width="100%"
+                        height="300"
+                        style={{ border: 0 }}
+                        src={`https://www.openstreetmap.org/export/embed.html?bbox=${formData.longitude - 0.01},${formData.latitude - 0.01},${formData.longitude + 0.01},${formData.latitude + 0.01}&layer=mapnik&marker=${formData.latitude},${formData.longitude}`}
+                        allowFullScreen
+                      ></iframe>
+                      <a
+                        href={`https://www.openstreetmap.org/?mlat=${formData.latitude}&mlon=${formData.longitude}#map=15/${formData.latitude}/${formData.longitude}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 text-sm mt-2 inline-block"
+                      >
+                        Voir sur OpenStreetMap
+                      </a>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -752,38 +839,59 @@ const AddPropertyPage: React.FC = () => {
               {formData.images.length > 0 && (
                 <div>
                   <h3 className="text-sm font-medium text-gray-700 mb-3">
-                    Aperçu des photos ({formData.images.length}/8)
+                    Aperçu des photos ({formData.images.length}/8) *
                   </h3>
+                  <p className="text-xs text-gray-500 mb-3">
+                    Ajoutez une légende pour chaque photo pour identifier les pièces (ex: Salon, Chambre principale, Cuisine, etc.)
+                  </p>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    {formData.images.map((url, index) => (
-                      <div key={index} className="relative group border border-gray-200 rounded-lg overflow-hidden">
-                        <img
-                          src={url}
-                          alt={`Photo ${index + 1}`}
-                          className="w-full h-32 object-cover"
-                          onError={(e) => {
-                            // Si l'image ne charge pas, afficher un placeholder
-                            e.currentTarget.src = 'https://via.placeholder.com/300x200?text=Image';
-                          }}
-                        />
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setFormData(prev => ({
-                              ...prev,
-                              images: prev.images.filter((_, i) => i !== index)
-                            }));
-                          }}
-                          className="absolute top-2 right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
-                          title="Supprimer cette photo"
-                        >
-                          ✕
-                        </button>
-                        <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
-                          Photo {index + 1}
+                    {formData.images.map((url, index) => {
+                      const captionData = formData.image_captions.find(c => c.url === url);
+                      return (
+                        <div key={index} className="relative group border border-gray-200 rounded-lg overflow-hidden">
+                          <img
+                            src={url}
+                            alt={`Photo ${index + 1}`}
+                            className="w-full h-32 object-cover"
+                            onError={(e) => {
+                              e.currentTarget.src = 'https://via.placeholder.com/300x200?text=Image';
+                            }}
+                          />
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setFormData(prev => ({
+                                ...prev,
+                                images: prev.images.filter((_, i) => i !== index),
+                                image_captions: prev.image_captions.filter(c => c.url !== url)
+                              }));
+                            }}
+                            className="absolute top-2 right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
+                            title="Supprimer cette photo"
+                          >
+                            ✕
+                          </button>
+                          <div className="p-2 bg-white">
+                            <input
+                              type="text"
+                              value={captionData?.caption || ''}
+                              onChange={(e) => {
+                                const newCaptions = [...formData.image_captions];
+                                const existingIndex = newCaptions.findIndex(c => c.url === url);
+                                if (existingIndex >= 0) {
+                                  newCaptions[existingIndex] = { url, caption: e.target.value };
+                                } else {
+                                  newCaptions.push({ url, caption: e.target.value });
+                                }
+                                handleInputChange('image_captions', newCaptions);
+                              }}
+                              placeholder="Légende (ex: Salon)"
+                              className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-primary"
+                            />
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                     {formData.images.length < 8 && (
                       <div
                         onClick={() => document.getElementById('image-upload')?.click()}
@@ -798,10 +906,13 @@ const AddPropertyPage: React.FC = () => {
               )}
 
               {formData.images.length === 0 && (
-                <div className="text-center py-8 text-gray-500">
-                  <p className="text-sm">Aucune photo ajoutée</p>
-                  <p className="text-xs mt-1">Les photos aident les voyageurs à mieux visualiser votre propriété</p>
+                <div className="text-center py-8 text-red-500">
+                  <p className="text-sm font-medium">⚠️ Aucune photo ajoutée</p>
+                  <p className="text-xs mt-1">Les photos sont obligatoires pour créer une annonce</p>
                 </div>
+              )}
+              {errors.images && (
+                <p className="text-red-500 text-sm mt-2">{errors.images}</p>
               )}
             </div>
           )}

@@ -91,12 +91,31 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Charger tous les utilisateurs actifs sauf l'utilisateur actuel
-      const { data: users, error } = await supabase
+      // Récupérer le type d'utilisateur actuel
+      const { data: currentProfile } = await supabase
+        .from('user_profiles')
+        .select('user_type')
+        .eq('id', user.id)
+        .single();
+
+      let query = supabase
         .from('user_profiles')
         .select('id, first_name, last_name, user_type, email')
-        .neq('id', user.id)
-        .order('first_name', { ascending: true });
+        .neq('id', user.id);
+
+      // Logique de communication selon les règles métier
+      if (userType === 'owner') {
+        // Les hôtes ne peuvent communiquer qu'avec l'admin
+        query = query.in('user_type', ['admin', 'super_admin']);
+      } else if (userType === 'traveler') {
+        // Les voyageurs ne communiquent qu'avec l'admin
+        query = query.in('user_type', ['admin', 'super_admin']);
+      } else if (userType === 'admin' || userType === 'super_admin') {
+        // Les admins peuvent communiquer avec tout le monde
+        // Pas de restriction
+      }
+
+      const { data: users, error } = await query.order('first_name', { ascending: true });
 
       if (error) throw error;
       setAvailableUsers(users || []);
@@ -113,16 +132,32 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Charger les conversations où l'utilisateur est soit sender soit receiver
-      const { data: conversationsData, error } = await supabase
+      // Récupérer le type d'utilisateur actuel
+      const { data: currentProfile } = await supabase
+        .from('user_profiles')
+        .select('user_type')
+        .eq('id', user.id)
+        .single();
+
+      let query = supabase
         .from('messages')
         .select(`
           *,
           sender:user_profiles!messages_sender_id_fkey(first_name, last_name, user_type),
           receiver:user_profiles!messages_receiver_id_fkey(first_name, last_name, user_type)
         `)
-        .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
-        .order('created_at', { ascending: false });
+        .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`);
+
+      // Filtrer selon les règles de communication
+      if (userType === 'owner') {
+        // Les hôtes ne voient que les conversations avec admin
+        // Le filtrage se fera après récupération
+      } else if (userType === 'traveler') {
+        // Les voyageurs ne voient que les conversations avec admin
+        // Le filtrage se fera après récupération
+      }
+
+      const { data: conversationsData, error } = await query.order('created_at', { ascending: false });
 
       if (error) throw error;
 
@@ -137,6 +172,14 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
         const otherUserType = message.sender_id === user.id 
           ? message.receiver.user_type
           : message.sender.user_type;
+
+        // Filtrer selon les règles de communication
+        if (userType === 'owner' || userType === 'traveler') {
+          // Les hôtes et voyageurs ne voient que les conversations avec admin
+          if (otherUserType !== 'admin' && otherUserType !== 'super_admin') {
+            return; // Ignorer cette conversation
+          }
+        }
 
         if (!conversationMap.has(otherUserId)) {
           conversationMap.set(otherUserId, {
@@ -213,6 +256,22 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
         return;
       }
 
+      // Vérifier les règles de communication avant d'envoyer
+      const { data: receiverProfile } = await supabase
+        .from('user_profiles')
+        .select('user_type')
+        .eq('id', selectedConversation)
+        .single();
+
+      if (userType === 'owner' || userType === 'traveler') {
+        // Les hôtes et voyageurs ne peuvent envoyer qu'à l'admin
+        if (receiverProfile?.user_type !== 'admin' && receiverProfile?.user_type !== 'super_admin') {
+          alert('Vous ne pouvez communiquer qu\'avec l\'administration.');
+          setSending(false);
+          return;
+        }
+      }
+
       // Insérer le message dans la base de données
       const { data: insertedMessage, error } = await supabase
         .from('messages')
@@ -270,6 +329,22 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
         alert('Vous devez être connecté pour envoyer un message');
         setSending(false);
         return;
+      }
+
+      // Vérifier les règles de communication avant d'envoyer
+      const { data: receiverProfile } = await supabase
+        .from('user_profiles')
+        .select('user_type')
+        .eq('id', selectedReceiverId)
+        .single();
+
+      if (userType === 'owner' || userType === 'traveler') {
+        // Les hôtes et voyageurs ne peuvent envoyer qu'à l'admin
+        if (receiverProfile?.user_type !== 'admin' && receiverProfile?.user_type !== 'super_admin') {
+          alert('Vous ne pouvez communiquer qu\'avec l\'administration.');
+          setSending(false);
+          return;
+        }
       }
 
       // Insérer le message dans la base de données
@@ -478,7 +553,7 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
               </div>
 
               {/* Messages */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              <div className="flex-1 overflow-y-auto p-4 space-y-4" style={{ maxHeight: '500px', scrollbarWidth: 'thin' }}>
                 {messages.map((message) => (
                   <div
                     key={message.id}

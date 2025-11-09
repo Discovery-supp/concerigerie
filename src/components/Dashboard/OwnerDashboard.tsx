@@ -17,7 +17,7 @@ interface OwnerDashboardProps {
 
 const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ userId }) => {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'overview' | 'reservations' | 'calendar' | 'reviews' | 'messages' | 'stats' | 'payments' | 'properties'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'reservations' | 'calendar' | 'reviews' | 'messages' | 'stats' | 'payments' | 'properties' | 'settings'>('overview');
   const [reservations, setReservations] = useState<any[]>([]);
   const [properties, setProperties] = useState<any[]>([]);
   const [reviews, setReviews] = useState<any[]>([]);
@@ -238,9 +238,22 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ userId }) => {
             { id: 'messages', label: 'Messages', icon: MessageCircle },
             { id: 'stats', label: 'Statistiques', icon: TrendingUp },
             { id: 'payments', label: 'Revenus', icon: DollarSign },
-            { id: 'properties', label: 'Propriétés', icon: Home }
+            { id: 'properties', label: 'Propriétés', icon: Home },
+            { id: 'settings', label: 'Paramètres', icon: Settings, isLink: true, link: '/settings' }
           ].map(tab => {
             const Icon = tab.icon;
+            if ((tab as any).isLink && (tab as any).link) {
+              return (
+                <a
+                  key={tab.id}
+                  href={(tab as any).link}
+                  className="flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap text-gray-600 hover:bg-gray-100"
+                >
+                  <Icon className="w-4 h-4" />
+                  <span>{tab.label}</span>
+                </a>
+              );
+            }
             return (
               <button
                 key={tab.id}

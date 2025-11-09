@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 import { useEffect } from 'react';
 import Header from './components/Layout/Header';
 import Footer from './components/Layout/Footer';
@@ -21,12 +21,61 @@ import ConfirmationPage from './pages/ConfirmationPage';
 import MyReservationsPage from './pages/MyReservationsPage';
 import MessagingPage from './pages/MessagingPage';
 import PropertyManagementPage from './pages/PropertyManagementPage';
+import SettingsPage from './pages/SettingsPage';
 
-function App() {
-  // Simulation d'un utilisateur connecté pour la démo
+// Composant interne pour gérer l'affichage conditionnel du Header/Footer
+const AppContent: React.FC = () => {
+  const location = useLocation();
   const currentUser = null; // Changez à un objet utilisateur pour tester les états connectés
   const userType = 'owner'; // 'admin', 'owner', 'traveler', 'provider'
 
+  // Pages où on ne veut pas afficher le Header et Footer (pages de compte)
+  const accountPages = [
+    '/dashboard',
+    '/settings',
+    '/messaging',
+    '/manage-properties',
+    '/my-reservations',
+    '/analytics',
+    '/reservations'
+  ];
+
+  const isAccountPage = accountPages.some(page => location.pathname.startsWith(page));
+
+  return (
+    <div className="min-h-screen bg-white flex flex-col">
+      {!isAccountPage && <Header currentUser={currentUser} userType={userType} />}
+      
+      <main className="flex-1">
+        <Routes>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/properties" element={<PropertiesPage />} />
+          <Route path="/property/:id" element={<PropertyDetailPage />} />
+          <Route path="/services" element={<ServicesPage />} />
+          <Route path="/consultation" element={<ConsultationPage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/create-property" element={<PropertyForm />} />
+          <Route path="/add-property" element={<AddPropertyPage />} />
+          <Route path="/booking" element={<BookingForm />} />
+          <Route path="/confirmation" element={<ConfirmationPage />} />
+          <Route path="/my-reservations" element={<MyReservationsPage />} />
+          <Route path="/manage-properties" element={<PropertyManagementPage />} />
+          <Route path="/messaging" element={<MessagingPage />} />
+          <Route path="/become-host" element={<HostForm />} />
+          <Route path="/become-partner" element={<PartnerForm />} />
+          <Route path="/become-provider" element={<ProviderForm />} />
+          <Route path="/settings" element={<SettingsPage />} />
+        </Routes>
+      </main>
+      
+      {!isAccountPage && <Footer />}
+    </div>
+  );
+};
+
+function App() {
   // Gestion de l'authentification OAuth
   useEffect(() => {
     const handleOAuthCallback = () => {
@@ -46,34 +95,7 @@ function App() {
 
   return (
     <Router>
-      <div className="min-h-screen bg-white flex flex-col">
-        <Header currentUser={currentUser} userType={userType} />
-        
-        <main className="flex-1">
-          <Routes>
-            <Route path="/" element={<HomePage />} />
-            <Route path="/properties" element={<PropertiesPage />} />
-            <Route path="/property/:id" element={<PropertyDetailPage />} />
-            <Route path="/services" element={<ServicesPage />} />
-            <Route path="/consultation" element={<ConsultationPage />} />
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/register" element={<RegisterPage />} />
-            <Route path="/dashboard" element={<DashboardPage />} />
-            <Route path="/create-property" element={<PropertyForm />} />
-            <Route path="/add-property" element={<AddPropertyPage />} />
-            <Route path="/booking" element={<BookingForm />} />
-            <Route path="/confirmation" element={<ConfirmationPage />} />
-            <Route path="/my-reservations" element={<MyReservationsPage />} />
-            <Route path="/manage-properties" element={<PropertyManagementPage />} />
-            <Route path="/messaging" element={<MessagingPage />} />
-            <Route path="/become-host" element={<HostForm />} />
-            <Route path="/become-partner" element={<PartnerForm />} />
-            <Route path="/become-provider" element={<ProviderForm />} />
-          </Routes>
-        </main>
-        
-        <Footer />
-      </div>
+      <AppContent />
     </Router>
   );
 }
