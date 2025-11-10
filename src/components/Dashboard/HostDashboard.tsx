@@ -390,13 +390,37 @@ const HostDashboard: React.FC = () => {
                           try {
                             const { error } = await supabase
                               .from('reservations')
-                              .update({ status: 'confirmed' })
+                              .update({ 
+                                status: 'confirmed',
+                                payment_status: 'paid'
+                              })
                               .eq('id', reservation.id);
                             if (!error) {
+                              // Créer une notification pour le guest
+                              const { data: { user } } = await supabase.auth.getUser();
+                              if (user && reservation.guest_id) {
+                                await supabase
+                                  .from('notifications')
+                                  .insert({
+                                    user_id: reservation.guest_id,
+                                    type: 'reservation_confirmed',
+                                    title: 'Réservation confirmée',
+                                    message: `Votre réservation pour ${reservation.property?.title || 'la propriété'} a été confirmée par l'hôte.`,
+                                    data: {
+                                      reservation_id: reservation.id,
+                                      property_id: reservation.property_id
+                                    },
+                                    is_read: false
+                                  });
+                              }
+                              alert('Réservation confirmée avec succès ! Le client a été notifié.');
                               loadDashboardData();
+                            } else {
+                              alert('Erreur lors de la confirmation: ' + error.message);
                             }
-                          } catch (error) {
+                          } catch (error: any) {
                             console.error('Erreur confirmation:', error);
+                            alert('Erreur lors de la confirmation: ' + error.message);
                           }
                         }}
                         className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 transition-colors"

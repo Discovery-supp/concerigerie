@@ -20,14 +20,24 @@ const TravelerDashboard: React.FC<TravelerDashboardProps> = ({ userId }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadData();
+    let cleanup: (() => void) | undefined;
+    
+    const setupData = async () => {
+      cleanup = await loadData();
+    };
+    
+    setupData();
+    
+    return () => {
+      if (cleanup) cleanup();
+    };
   }, [userId]);
 
-  const loadData = async () => {
+  const loadData = async (): Promise<(() => void) | undefined> => {
     try {
       const today = new Date().toISOString().split('T')[0];
 
-      // Réservations actuelles (check-out dans le futur)
+      // Réservations actuelles (check-out dans le futur) - inclure pending et confirmed
       const { data: currentData } = await supabase
         .from('reservations')
         .select(`
@@ -36,7 +46,8 @@ const TravelerDashboard: React.FC<TravelerDashboardProps> = ({ userId }) => {
         `)
         .eq('guest_id', userId)
         .gte('check_out', today)
-        .order('check_in', { ascending: true });
+        .in('status', ['pending', 'confirmed', 'pending_cancellation'])
+        .order('created_at', { ascending: false });
 
       // Historique (check-out dans le passé)
       const { data: pastData } = await supabase
@@ -51,8 +62,30 @@ const TravelerDashboard: React.FC<TravelerDashboardProps> = ({ userId }) => {
 
       setCurrentReservations(currentData || []);
       setPastReservations(pastData || []);
+
+      // S'abonner aux changements de réservations en temps réel
+      const reservationChannel = supabase
+        .channel(`traveler-reservations-${userId}`)
+        .on('postgres_changes', 
+          { 
+            event: '*', 
+            schema: 'public', 
+            table: 'reservations',
+            filter: `guest_id=eq.${userId}`
+          },
+          (payload) => {
+            console.log('Changement de réservation:', payload);
+            loadData(); // Recharger les réservations
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(reservationChannel);
+      };
     } catch (error) {
       console.error('Erreur chargement données:', error);
+      return undefined;
     } finally {
       setLoading(false);
     }

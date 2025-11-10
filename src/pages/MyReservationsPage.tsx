@@ -28,6 +28,37 @@ const MyReservationsPage: React.FC = () => {
 
   useEffect(() => {
     loadReservations();
+    
+    // S'abonner aux changements de réservations en temps réel
+    const setupRealtimeSubscription = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const reservationChannel = supabase
+        .channel(`reservations-changes-${user.id}`)
+        .on('postgres_changes', 
+          { 
+            event: '*', 
+            schema: 'public', 
+            table: 'reservations',
+            filter: `guest_id=eq.${user.id}`
+          },
+          (payload) => {
+            console.log('Changement de réservation:', payload);
+            loadReservations(); // Recharger les réservations
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(reservationChannel);
+      };
+    };
+
+    const cleanup = setupRealtimeSubscription();
+    return () => {
+      cleanup.then(cleanupFn => cleanupFn && cleanupFn());
+    };
   }, []);
 
   // Recharger les réservations quand on revient sur la page
@@ -79,16 +110,19 @@ const MyReservationsPage: React.FC = () => {
 
   const getReservationStatusBadge = (status: string) => {
     const statusConfig = {
-      pending: { text: 'En attente', color: 'bg-yellow-100 text-yellow-800' },
-      confirmed: { text: 'Confirmée', color: 'bg-green-100 text-green-800' },
-      cancelled: { text: 'Annulée', color: 'bg-red-100 text-red-800' },
-      completed: { text: 'Terminée', color: 'bg-blue-100 text-blue-800' }
+      pending: { text: 'En attente de confirmation', color: 'bg-yellow-100 text-yellow-800', icon: Clock },
+      confirmed: { text: 'Confirmée', color: 'bg-green-100 text-green-800', icon: CheckCircle },
+      cancelled: { text: 'Annulée', color: 'bg-red-100 text-red-800', icon: XCircle },
+      completed: { text: 'Terminée', color: 'bg-blue-100 text-blue-800', icon: CheckCircle },
+      pending_cancellation: { text: 'Demande d\'annulation en attente', color: 'bg-orange-100 text-orange-800', icon: Clock }
     };
 
     const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.pending;
+    const Icon = config.icon || Clock;
 
     return (
       <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${config.color}`}>
+        <Icon className="w-4 h-4 mr-1" />
         {config.text}
       </span>
     );
@@ -101,11 +135,11 @@ const MyReservationsPage: React.FC = () => {
 
     switch (filter) {
       case 'upcoming':
-        return checkIn > today && reservation.status !== 'cancelled';
+        return checkIn > today && reservation.status !== 'cancelled' && reservation.status !== 'pending_cancellation';
       case 'past':
         return checkOut < today;
       case 'cancelled':
-        return reservation.status === 'cancelled';
+        return reservation.status === 'cancelled' || reservation.status === 'pending_cancellation';
       default:
         return true;
     }

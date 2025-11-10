@@ -45,10 +45,9 @@ const PreparationStep: React.FC<PreparationStepProps> = ({ data, onChange, onNex
   ];
 
   const cancellationPolicies = [
-    { value: 'flexible', label: 'Annulation gratuite', description: 'Remboursement intégral jusqu\'à 24h avant l\'arrivée' },
-    { value: 'moderate', label: 'Remboursement 50%', description: '50% de remboursement si annulation avant 24h' },
-    { value: 'strict', label: 'Remboursement 20%', description: '20% de remboursement si annulation dans les 48h' },
-    { value: 'non_refundable', label: 'Non remboursable', description: 'Aucun remboursement en cas d\'annulation' }
+    { value: 'flexible', label: 'Flexible - Remboursement intégral jusqu\'à 7 jours avant', description: 'Remboursement intégral jusqu\'à 7 jours avant l\'arrivée' },
+    { value: 'moderate', label: 'Modérée - Remboursement de 50% jusqu\'à 5 jours avant', description: 'Remboursement de 50% jusqu\'à 5 jours avant l\'arrivée' },
+    { value: 'strict', label: 'Stricte - Remboursement intégral jusqu\'à 24h avant', description: 'Remboursement intégral jusqu\'à 24h avant l\'arrivée, puis aucun remboursement' }
   ];
 
   const handleInputChange = (field: string, value: any) => {

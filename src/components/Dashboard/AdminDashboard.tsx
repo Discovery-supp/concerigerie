@@ -54,7 +54,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ userId }) => {
         .select('*')
         .order('created_at', { ascending: false });
 
-      // Charger toutes les réservations
+      // Charger toutes les réservations (y compris les demandes d'annulation)
       const { data: reservationsData } = await supabase
         .from('reservations')
         .select(`
@@ -427,11 +427,98 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ userId }) => {
 
       {/* Réservations */}
       {activeTab === 'reservations' && (
-        <ReservationsList
-          reservations={reservations}
-          userType="admin"
-          title="Toutes les réservations"
-        />
+        <div className="space-y-6">
+          {/* Demandes d'annulation en attente */}
+          {reservations.filter(r => r.status === 'pending_cancellation').length > 0 && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-xl shadow-md p-6">
+              <h3 className="text-lg font-semibold text-yellow-900 mb-4">
+                Demandes d'annulation en attente ({reservations.filter(r => r.status === 'pending_cancellation').length})
+              </h3>
+              <div className="space-y-4">
+                {reservations.filter(r => r.status === 'pending_cancellation').map(reservation => (
+                  <div key={reservation.id} className="bg-white rounded-lg p-4 border border-yellow-300">
+                    <div className="flex justify-between items-start mb-3">
+                      <div>
+                        <div className="font-semibold text-gray-900">
+                          {reservation.property?.title || 'Propriété'}
+                        </div>
+                        <div className="text-sm text-gray-600">
+                          Client: {reservation.guest?.first_name} {reservation.guest?.last_name}
+                        </div>
+                        <div className="text-sm text-gray-600">
+                          Dates: {new Date(reservation.check_in).toLocaleDateString('fr-FR')} - {new Date(reservation.check_out).toLocaleDateString('fr-FR')}
+                        </div>
+                        <div className="text-sm text-gray-600">
+                          Montant: ${reservation.total_amount?.toFixed(2) || '0.00'}
+                        </div>
+                        {reservation.cancellation_reason && (
+                          <div className="mt-2 text-sm text-gray-700">
+                            <strong>Raison:</strong> {reservation.cancellation_reason}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex space-x-2">
+                        <button
+                          onClick={async () => {
+                            try {
+                              const { error } = await supabase
+                                .from('reservations')
+                                .update({ 
+                                  status: 'cancelled',
+                                  payment_status: 'refunded'
+                                })
+                                .eq('id', reservation.id);
+                              if (!error) {
+                                loadData();
+                                alert('Annulation approuvée et remboursement effectué');
+                              } else {
+                                alert('Erreur: ' + error.message);
+                              }
+                            } catch (error: any) {
+                              alert('Erreur: ' + error.message);
+                            }
+                          }}
+                          className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
+                        >
+                          Approuver
+                        </button>
+                        <button
+                          onClick={async () => {
+                            try {
+                              const { error } = await supabase
+                                .from('reservations')
+                                .update({ 
+                                  status: reservation.status === 'pending_cancellation' ? 'confirmed' : reservation.status
+                                })
+                                .eq('id', reservation.id);
+                              if (!error) {
+                                loadData();
+                                alert('Demande d\'annulation refusée');
+                              } else {
+                                alert('Erreur: ' + error.message);
+                              }
+                            } catch (error: any) {
+                              alert('Erreur: ' + error.message);
+                            }
+                          }}
+                          className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm"
+                        >
+                          Refuser
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          
+          <ReservationsList
+            reservations={reservations}
+            userType="admin"
+            title="Toutes les réservations"
+          />
+        </div>
       )}
 
       {/* Messages */}

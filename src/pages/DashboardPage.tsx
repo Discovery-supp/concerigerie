@@ -260,30 +260,6 @@ const DashboardPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex justify-between items-center mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">
-              Bonjour, {user?.first_name || 'Utilisateur'}
-            </h1>
-            <p className="text-gray-600 mt-1">
-              Bienvenue dans votre espace{' '}
-              {user?.user_type === 'owner' && 'propriétaire'}
-              {user?.user_type === 'provider' && 'prestataire'}
-              {user?.user_type === 'traveler' && 'voyageur'}
-              {user?.user_type === 'admin' && 'administrateur'}
-              {user?.user_type === 'partner' && 'partenaire'}
-              {!user?.user_type && 'utilisateur'}
-            </p>
-          </div>
-          <button
-            onClick={handleLogout}
-            className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-          >
-            <LogOut className="w-4 h-4" />
-            <span>Déconnexion</span>
-          </button>
-        </div>
-
         {getDashboardContent()}
       </div>
     </div>

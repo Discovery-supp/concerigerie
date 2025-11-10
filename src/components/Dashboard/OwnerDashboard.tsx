@@ -213,16 +213,45 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ userId }) => {
 
   const handleStatusChange = async (reservationId: string, newStatus: string) => {
     try {
+      // Récupérer les informations de la réservation avant la mise à jour
+      const { data: reservation } = await supabase
+        .from('reservations')
+        .select('*, property:properties(id, title)')
+        .eq('id', reservationId)
+        .single();
+
       const { error } = await supabase
         .from('reservations')
-        .update({ status: newStatus })
+        .update({ 
+          status: newStatus,
+          ...(newStatus === 'confirmed' && { payment_status: 'paid' })
+        })
         .eq('id', reservationId);
 
       if (error) throw error;
+
+      // Si la réservation est confirmée, créer une notification pour le guest
+      if (newStatus === 'confirmed' && reservation?.guest_id) {
+        await supabase
+          .from('notifications')
+          .insert({
+            user_id: reservation.guest_id,
+            type: 'reservation_confirmed',
+            title: 'Réservation confirmée',
+            message: `Votre réservation pour ${reservation.property?.title || 'la propriété'} a été confirmée par l'hôte.`,
+            data: {
+              reservation_id: reservationId,
+              property_id: reservation.property_id
+            },
+            is_read: false
+          });
+      }
+
       loadData();
       loadNotifications();
     } catch (error) {
       console.error('Erreur mise à jour réservation:', error);
+      alert('Erreur lors de la mise à jour: ' + (error as any).message);
     }
   };
 

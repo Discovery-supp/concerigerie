@@ -22,6 +22,14 @@ interface RealTimeBookingProps {
   onBookingSuccess?: (reservationId: string) => void;
 }
 
+interface AdditionalService {
+  id: string;
+  name: string;
+  unitPrice: number;
+  quantity: number;
+  totalPrice: number;
+}
+
 const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSuccess }) => {
   const navigate = useNavigate();
   const [checkIn, setCheckIn] = useState('');
@@ -32,6 +40,15 @@ const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSu
   const [showPayment, setShowPayment] = useState(false);
   const [availabilityStatus, setAvailabilityStatus] = useState<'available' | 'unavailable' | 'checking' | null>(null);
   const [isOwner, setIsOwner] = useState(false);
+  const [additionalServices, setAdditionalServices] = useState<AdditionalService[]>([]);
+
+  // Services supplémentaires disponibles
+  const availableServices = [
+    { id: 'car_rental', name: 'Location véhicule', unitPrice: 35 },
+    { id: 'breakfast', name: 'Option petit-déjeuner', unitPrice: 12 },
+    { id: 'extra_cleaning', name: 'Service de ménage supplémentaire', unitPrice: 20 },
+    { id: 'airport_pickup', name: 'Accueil aéroport', unitPrice: 40 }
+  ];
 
   useEffect(() => {
     checkIfOwner();
@@ -53,6 +70,32 @@ const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSu
       supabase.removeChannel(reservationChannel);
     };
   }, [property.id]);
+
+  const handleServiceQuantityChange = (serviceId: string, quantity: number) => {
+    const service = availableServices.find(s => s.id === serviceId);
+    if (!service) return;
+
+    setAdditionalServices(prev => {
+      const existing = prev.find(s => s.id === serviceId);
+      if (quantity === 0) {
+        return prev.filter(s => s.id !== serviceId);
+      }
+      if (existing) {
+        return prev.map(s => 
+          s.id === serviceId 
+            ? { ...s, quantity, totalPrice: service.unitPrice * quantity }
+            : s
+        );
+      }
+      return [...prev, {
+        id: serviceId,
+        name: service.name,
+        unitPrice: service.unitPrice,
+        quantity,
+        totalPrice: service.unitPrice * quantity
+      }];
+    });
+  };
 
   const checkIfOwner = async () => {
     try {
@@ -208,10 +251,11 @@ const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSu
 
     const subtotal = basePrice - discount;
     const cleaning = property.cleaning_fee || 0;
-    const serviceFee = (subtotal * 0.12); // 12% de frais de service
-    const total = subtotal + cleaning + serviceFee;
+    const additionalServicesTotal = additionalServices.reduce((sum, s) => sum + s.totalPrice, 0);
+    const serviceFee = (subtotal + cleaning + additionalServicesTotal) * 0.12; // 12% de frais de service
+    const total = subtotal + cleaning + additionalServicesTotal + serviceFee;
 
-    return { nights, basePrice, discount, subtotal, cleaning, serviceFee, total };
+    return { nights, basePrice, discount, subtotal, cleaning, additionalServicesTotal, serviceFee, total };
   };
 
   const handleBooking = async () => {
@@ -260,7 +304,16 @@ const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSu
           status: 'pending', // Statut 'pending' pour que l'hôte puisse confirmer
           payment_method: paymentData.payment_method,
           payment_status: paymentData.payment_status,
-          special_requests: ''
+          special_requests: '',
+          additional_services: additionalServices.length > 0 
+            ? additionalServices.map(s => ({
+                id: s.id,
+                name: s.name,
+                unitPrice: s.unitPrice,
+                quantity: s.quantity,
+                totalPrice: s.totalPrice
+              }))
+            : []
         })
         .select()
         .single();
@@ -384,6 +437,57 @@ const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSu
           />
         </div>
 
+        {/* Services supplémentaires */}
+        {checkIn && checkOut && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-3">
+              Services supplémentaires (optionnel)
+            </label>
+            <div className="space-y-3">
+              {availableServices.map(service => {
+                const selectedService = additionalServices.find(s => s.id === service.id);
+                const quantity = selectedService?.quantity || 0;
+                return (
+                  <div key={service.id} className="flex items-center justify-between p-3 border border-gray-300 rounded-lg">
+                    <div className="flex-1">
+                      <div className="font-medium text-gray-900">{service.name}</div>
+                      <div className="text-sm text-gray-600">
+                        Prix unitaire: ${service.unitPrice.toFixed(2)}
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-3">
+                      <button
+                        type="button"
+                        onClick={() => handleServiceQuantityChange(service.id, Math.max(0, quantity - 1))}
+                        className="w-8 h-8 flex items-center justify-center border border-gray-300 rounded-lg hover:bg-gray-50"
+                        disabled={quantity === 0}
+                      >
+                        -
+                      </button>
+                      <span className="w-12 text-center font-medium">{quantity}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleServiceQuantityChange(service.id, quantity + 1)}
+                        className="w-8 h-8 flex items-center justify-center border border-gray-300 rounded-lg hover:bg-gray-50"
+                      >
+                        +
+                      </button>
+                      {quantity > 0 && (
+                        <div className="ml-4 text-right">
+                          <div className="text-sm font-semibold text-gray-900">
+                            ${(service.unitPrice * quantity).toFixed(2)}
+                          </div>
+                          <div className="text-xs text-gray-500">Total</div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Statut de disponibilité */}
         {checkIn && checkOut && availabilityStatus !== null && (
           <div className={`p-4 rounded-lg ${
@@ -429,6 +533,12 @@ const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSu
               <span>Frais de ménage</span>
               <span>${price.cleaning.toFixed(2)}</span>
             </div>
+            {price.additionalServicesTotal > 0 && (
+              <div className="flex justify-between text-sm">
+                <span>Services supplémentaires</span>
+                <span>${price.additionalServicesTotal.toFixed(2)}</span>
+              </div>
+            )}
             <div className="flex justify-between text-sm">
               <span>Frais de service (12%)</span>
               <span>${price.serviceFee.toFixed(2)}</span>
