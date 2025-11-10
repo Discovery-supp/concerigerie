@@ -30,7 +30,7 @@ const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSu
   const [blockedDates, setBlockedDates] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [showPayment, setShowPayment] = useState(false);
-  const [availabilityStatus, setAvailabilityStatus] = useState<'available' | 'unavailable' | 'checking'>('checking');
+  const [availabilityStatus, setAvailabilityStatus] = useState<'available' | 'unavailable' | 'checking' | null>(null);
   const [isOwner, setIsOwner] = useState(false);
 
   useEffect(() => {
@@ -149,15 +149,33 @@ const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSu
 
       // Vérifier les conflits de réservation (sauf si c'est le propriétaire)
       if (!isOwner) {
-        const { data: conflicts } = await supabase
+        // Vérifier les chevauchements de dates : deux périodes se chevauchent si
+        // check_in < new_check_out ET check_out > new_check_in
+        // On récupère toutes les réservations et on filtre côté client pour plus de fiabilité
+        const { data: allReservations, error: conflictError } = await supabase
           .from('reservations')
-          .select('id')
+          .select('check_in, check_out')
           .eq('property_id', property.id)
-          .in('status', ['confirmed', 'pending'])
-          .or(`check_in.lte.${checkOut},check_out.gte.${checkIn}`)
-          .limit(1);
+          .in('status', ['confirmed', 'pending']);
 
-        if (conflicts && conflicts.length > 0) {
+        if (conflictError) {
+          console.error('Erreur requête conflits:', conflictError);
+          setAvailabilityStatus('unavailable');
+          return;
+        }
+
+        // Vérifier les chevauchements côté client
+        const hasConflict = allReservations?.some(reservation => {
+          const resCheckIn = new Date(reservation.check_in);
+          const resCheckOut = new Date(reservation.check_out);
+          const newCheckIn = new Date(checkIn);
+          const newCheckOut = new Date(checkOut);
+          
+          // Deux périodes se chevauchent si: start1 < end2 AND end1 > start2
+          return resCheckIn < newCheckOut && resCheckOut > newCheckIn;
+        });
+
+        if (hasConflict) {
           setAvailabilityStatus('unavailable');
           return;
         }
@@ -249,20 +267,23 @@ const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSu
 
       if (error) throw error;
 
-      // Envoyer les notifications automatiques
-      await sendBookingNotifications(reservation.id);
+      // Désactiver l'envoi d'emails pour l'instant
+      // await sendBookingNotifications(reservation.id);
 
       if (onBookingSuccess) {
         onBookingSuccess(reservation.id);
       }
 
-      alert('Réservation confirmée ! Vous recevrez une confirmation par email.');
+      alert('Réservation créée avec succès ! Elle est maintenant en attente de confirmation par l\'hôte.');
       setShowPayment(false);
       
       // Réinitialiser le formulaire
       setCheckIn('');
       setCheckOut('');
       setGuests(1);
+      
+      // Rediriger vers la page des réservations pour voir la nouvelle réservation
+      navigate('/my-reservations');
     } catch (error: any) {
       console.error('Erreur création réservation:', error);
       alert('Erreur lors de la réservation: ' + error.message);
@@ -318,8 +339,9 @@ const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSu
               value={checkIn}
               onChange={(e) => {
                 setCheckIn(e.target.value);
-                if (checkOut && e.target.value >= checkOut) {
+                if (!e.target.value || (checkOut && e.target.value >= checkOut)) {
                   setCheckOut('');
+                  setAvailabilityStatus(null);
                 }
               }}
               min={today}
@@ -334,7 +356,12 @@ const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSu
             <input
               type="date"
               value={checkOut}
-              onChange={(e) => setCheckOut(e.target.value)}
+              onChange={(e) => {
+                setCheckOut(e.target.value);
+                if (!e.target.value) {
+                  setAvailabilityStatus(null);
+                }
+              }}
               min={checkIn || today}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
             />
@@ -358,7 +385,7 @@ const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSu
         </div>
 
         {/* Statut de disponibilité */}
-        {checkIn && checkOut && (
+        {checkIn && checkOut && availabilityStatus !== null && (
           <div className={`p-4 rounded-lg ${
             availabilityStatus === 'available' ? 'bg-green-50 border border-green-200' :
             availabilityStatus === 'unavailable' ? 'bg-red-50 border border-red-200' :

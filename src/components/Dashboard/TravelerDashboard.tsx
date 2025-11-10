@@ -4,7 +4,8 @@ import { supabase } from '../../lib/supabase';
 import StatCard from './StatCard';
 import QuickActionCard from './QuickActionCard';
 import ReservationsList from './ReservationsList';
-import MessageBox from './MessageBox';
+import MessagingSystem from '../Forms/MessagingSystem';
+import ReviewsForm from '../Forms/ReviewsForm';
 import { Calendar, Home, Search, MessageCircle, Gift, HelpCircle, Star, Settings } from 'lucide-react';
 
 interface TravelerDashboardProps {
@@ -13,7 +14,7 @@ interface TravelerDashboardProps {
 
 const TravelerDashboard: React.FC<TravelerDashboardProps> = ({ userId }) => {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'overview' | 'current' | 'history' | 'search' | 'messages' | 'offers'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'current' | 'history' | 'search' | 'messages' | 'offers' | 'reviews'>('overview');
   const [currentReservations, setCurrentReservations] = useState<any[]>([]);
   const [pastReservations, setPastReservations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -31,8 +32,7 @@ const TravelerDashboard: React.FC<TravelerDashboardProps> = ({ userId }) => {
         .from('reservations')
         .select(`
           *,
-          property:properties(id, title, address, images),
-          guest:user_profiles!reservations_guest_id_fkey(id, first_name, last_name, email)
+          property:properties(id, title, address, images)
         `)
         .eq('guest_id', userId)
         .gte('check_out', today)
@@ -43,8 +43,7 @@ const TravelerDashboard: React.FC<TravelerDashboardProps> = ({ userId }) => {
         .from('reservations')
         .select(`
           *,
-          property:properties(id, title, address, images),
-          guest:user_profiles!reservations_guest_id_fkey(id, first_name, last_name, email)
+          property:properties(id, title, address, images)
         `)
         .eq('guest_id', userId)
         .lt('check_out', today)
@@ -74,6 +73,7 @@ const TravelerDashboard: React.FC<TravelerDashboardProps> = ({ userId }) => {
             { id: 'history', label: 'Historique', icon: Calendar },
             { id: 'search', label: 'Recherche', icon: Search },
             { id: 'messages', label: 'Messages', icon: MessageCircle },
+            { id: 'reviews', label: 'Avis', icon: Star },
             { id: 'offers', label: 'Offres', icon: Gift }
           ].map(tab => {
             const Icon = tab.icon;
@@ -190,7 +190,12 @@ const TravelerDashboard: React.FC<TravelerDashboardProps> = ({ userId }) => {
 
       {/* Messages */}
       {activeTab === 'messages' && (
-        <MessageBox userId={userId} userType="traveler" />
+        <MessagingSystem userType="traveler" />
+      )}
+
+      {/* Avis */}
+      {activeTab === 'reviews' && (
+        <ReviewsForm userType="traveler" />
       )}
 
       {/* Offres spéciales */}

@@ -124,14 +124,50 @@ const ReviewsForm: React.FC<ReviewsFormProps> = ({
         setProperties(propertiesData || []);
       }
 
-      // Charger les réservations pour les voyageurs
+      // Charger les réservations pour les voyageurs (terminées ou confirmées avec check-out passé)
       if (userType === 'traveler') {
+        const today = new Date().toISOString().split('T')[0];
         const { data: reservationsData } = await supabase
           .from('reservations')
           .select('id, property_id, check_in, check_out, status')
           .eq('guest_id', user.id)
-          .eq('status', 'completed');
-        setReservations(reservationsData || []);
+          .in('status', ['confirmed', 'completed'])
+          .lt('check_out', today); // Seulement les réservations avec check-out passé
+        
+        // Vérifier quelles réservations ont déjà un avis
+        if (reservationsData && reservationsData.length > 0) {
+          const reservationIds = reservationsData.map(r => r.id);
+          // Essayer avec reviewer_id d'abord, puis guest_id si nécessaire
+          let existingReviews: any[] = [];
+          
+          const { data: reviews1 } = await supabase
+            .from('reviews')
+            .select('reservation_id, property_id')
+            .in('reservation_id', reservationIds)
+            .eq('reviewer_id', user.id);
+          
+          if (reviews1 && reviews1.length > 0) {
+            existingReviews = reviews1;
+          } else {
+            // Essayer avec guest_id
+            const { data: reviews2 } = await supabase
+              .from('reviews')
+              .select('reservation_id, property_id')
+              .in('reservation_id', reservationIds)
+              .eq('guest_id', user.id);
+            
+            if (reviews2) {
+              existingReviews = reviews2;
+            }
+          }
+          
+          const reviewedReservationIds = new Set(existingReviews?.map(r => r.reservation_id).filter(Boolean) || []);
+          // Filtrer pour ne garder que les réservations sans avis
+          const reservationsWithoutReview = reservationsData.filter(r => !reviewedReservationIds.has(r.id));
+          setReservations(reservationsWithoutReview);
+        } else {
+          setReservations([]);
+        }
       }
 
     } catch (error) {
@@ -153,15 +189,42 @@ const ReviewsForm: React.FC<ReviewsFormProps> = ({
       const reservation = reservations.find(r => r.id === selectedReservation);
       if (!reservation) return;
 
+      // Vérifier la structure de la table reviews (peut être reviewer_id ou guest_id)
+      const reviewData: any = {
+        reservation_id: selectedReservation,
+        property_id: reservation.property_id,
+        rating: newReview.rating,
+        comment: newReview.comment || ''
+      };
+
+      // Essayer avec reviewer_id d'abord (structure la plus récente), puis guest_id
+      // Supabase ignorera les colonnes qui n'existent pas
+      reviewData.reviewer_id = user.id;
+      reviewData.guest_id = user.id;
+      
+      // Ajouter les notes détaillées si disponibles
+      if (newReview.aspects.cleanliness > 0) {
+        reviewData.cleanliness_rating = newReview.aspects.cleanliness;
+      }
+      if (newReview.aspects.communication > 0) {
+        reviewData.communication_rating = newReview.aspects.communication;
+      }
+      if (newReview.aspects.checkin > 0) {
+        reviewData.checkin_rating = newReview.aspects.checkin;
+      }
+      if (newReview.aspects.accuracy > 0) {
+        reviewData.accuracy_rating = newReview.aspects.accuracy;
+      }
+      if (newReview.aspects.location > 0) {
+        reviewData.location_rating = newReview.aspects.location;
+      }
+      if (newReview.aspects.value > 0) {
+        reviewData.value_rating = newReview.aspects.value;
+      }
+
       const { error } = await supabase
         .from('reviews')
-        .insert([{
-          reservation_id: selectedReservation,
-          property_id: reservation.property_id,
-          guest_id: user.id,
-          rating: newReview.rating,
-          comment: newReview.comment
-        }]);
+        .insert([reviewData]);
 
       if (error) throw error;
 

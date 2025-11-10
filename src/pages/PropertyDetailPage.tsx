@@ -487,8 +487,9 @@ const PropertyDetailPage: React.FC = () => {
                 long_stay_discount_30: property.long_stay_discount_30
               }}
               onBookingSuccess={(reservationId) => {
-                alert('Réservation confirmée !');
-                navigate(`/confirmation?reservation=${reservationId}`);
+                // La redirection est gérée dans RealTimeBooking
+                // Ici on peut juste logger ou faire d'autres actions si nécessaire
+                console.log('Réservation créée:', reservationId);
               }}
             />
           </div>

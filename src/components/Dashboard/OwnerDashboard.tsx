@@ -6,7 +6,7 @@ import QuickActionCard from './QuickActionCard';
 import ReservationsList from './ReservationsList';
 import CalendarView from './CalendarView';
 import ReviewsList from './ReviewsList';
-import MessageBox from './MessageBox';
+import MessagingSystem from '../Forms/MessagingSystem';
 import PerformanceStats from './PerformanceStats';
 import PaymentReports from './PaymentReports';
 import { Home, Calendar, DollarSign, Users, Settings, Package, MessageCircle, Star, TrendingUp, Bell, CheckCircle, Clock } from 'lucide-react';
@@ -57,13 +57,38 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ userId }) => {
         .from('reservations')
         .select(`
           *,
-          property:properties(id, title, address, images),
-          guest:user_profiles!reservations_guest_id_fkey(id, first_name, last_name, email, phone)
+          property:properties(id, title, address, images)
         `)
         .in('property_id', propertyIds)
         .order('check_in', { ascending: false });
 
-      if (resError) throw resError;
+      if (resError) {
+        console.error('Erreur chargement réservations:', resError);
+        throw resError;
+      }
+
+      console.log('Réservations chargées:', reservationsData?.length || 0, 'pour', propertyIds.length, 'propriétés');
+
+      // Enrichir les réservations avec les profils des invités
+      if (reservationsData && reservationsData.length > 0) {
+        const guestIds = [...new Set(reservationsData.map(r => r.guest_id).filter(Boolean))];
+        if (guestIds.length > 0) {
+          const { data: guestProfiles, error: guestError } = await supabase
+            .from('user_profiles')
+            .select('id, first_name, last_name, phone')
+            .in('id', guestIds);
+
+          if (guestError) {
+            console.error('Erreur chargement profils invités:', guestError);
+          } else {
+            // Fusionner les données
+            const guestMap = new Map(guestProfiles?.map(g => [g.id, g]) || []);
+            reservationsData.forEach(reservation => {
+              reservation.guest = guestMap.get(reservation.guest_id);
+            });
+          }
+        }
+      }
 
       // Charger les avis
       const { data: reviewsData } = await supabase
@@ -459,7 +484,7 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ userId }) => {
 
       {/* Messages */}
       {activeTab === 'messages' && (
-        <MessageBox userId={userId} userType="owner" />
+        <MessagingSystem userType="owner" />
       )}
 
       {/* Statistiques */}

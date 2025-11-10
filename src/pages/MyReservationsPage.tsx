@@ -30,6 +30,15 @@ const MyReservationsPage: React.FC = () => {
     loadReservations();
   }, []);
 
+  // Recharger les réservations quand on revient sur la page
+  useEffect(() => {
+    const handleFocus = () => {
+      loadReservations();
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, []);
+
   const loadReservations = async () => {
     try {
       setLoading(true);

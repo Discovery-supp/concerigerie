@@ -4,7 +4,7 @@ import { supabase } from '../../lib/supabase';
 import StatCard from './StatCard';
 import QuickActionCard from './QuickActionCard';
 import CalendarView from './CalendarView';
-import MessageBox from './MessageBox';
+import MessagingSystem from '../Forms/MessagingSystem';
 import { Wrench, Calendar, MessageCircle, Star, TrendingUp, CheckCircle, Clock } from 'lucide-react';
 
 interface ProviderDashboardProps {
@@ -238,7 +238,7 @@ const ProviderDashboard: React.FC<ProviderDashboardProps> = ({ userId }) => {
 
       {/* Messages */}
       {activeTab === 'messages' && (
-        <MessageBox userId={userId} userType="provider" />
+        <MessagingSystem userType="provider" />
       )}
 
       {/* Statistiques */}

@@ -141,11 +141,7 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
 
       let query = supabase
         .from('messages')
-        .select(`
-          *,
-          sender:user_profiles!sender_id(first_name, last_name, user_type),
-          receiver:user_profiles!receiver_id(first_name, last_name, user_type)
-        `)
+        .select('*')
         .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`);
 
       // Filtrer selon les règles de communication
@@ -159,25 +155,48 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
 
       const { data: conversationsData, error } = await query.order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Erreur chargement conversations:', error);
+        throw error;
+      }
+
+      // Récupérer tous les IDs uniques des utilisateurs (senders et receivers)
+      const userIds = new Set<string>();
+      conversationsData?.forEach((message: any) => {
+        if (message.sender_id) userIds.add(message.sender_id);
+        if (message.receiver_id) userIds.add(message.receiver_id);
+      });
+
+      // Récupérer les profils des utilisateurs
+      let userProfilesMap = new Map();
+      if (userIds.size > 0) {
+        const { data: profiles } = await supabase
+          .from('user_profiles')
+          .select('id, first_name, last_name, user_type')
+          .in('id', Array.from(userIds));
+
+        profiles?.forEach(profile => {
+          userProfilesMap.set(profile.id, profile);
+        });
+      }
 
       // Grouper les messages par conversation
       const conversationMap = new Map<string, Conversation>();
       
       conversationsData?.forEach((message: any) => {
+        const senderProfile = userProfilesMap.get(message.sender_id);
+        const receiverProfile = userProfilesMap.get(message.receiver_id);
+
         // Vérifier que sender et receiver existent
-        if (!message.sender || !message.receiver) {
+        if (!senderProfile || !receiverProfile) {
           console.warn('Message avec sender ou receiver manquant:', message);
           return;
         }
 
         const otherUserId = message.sender_id === user.id ? message.receiver_id : message.sender_id;
-        const otherUserName = message.sender_id === user.id 
-          ? `${message.receiver?.first_name || ''} ${message.receiver?.last_name || ''}`.trim() || 'Utilisateur inconnu'
-          : `${message.sender?.first_name || ''} ${message.sender?.last_name || ''}`.trim() || 'Utilisateur inconnu';
-        const otherUserType = message.sender_id === user.id 
-          ? message.receiver?.user_type
-          : message.sender?.user_type;
+        const otherUserProfile = message.sender_id === user.id ? receiverProfile : senderProfile;
+        const otherUserName = `${otherUserProfile?.first_name || ''} ${otherUserProfile?.last_name || ''}`.trim() || 'Utilisateur inconnu';
+        const otherUserType = otherUserProfile?.user_type;
 
         // Filtrer selon les règles de communication
         if (userType === 'owner' || userType === 'traveler') {
@@ -191,7 +210,11 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
           conversationMap.set(otherUserId, {
             id: otherUserId,
             participants: [user.id, otherUserId],
-            last_message: message,
+            last_message: {
+              ...message,
+              sender: senderProfile,
+              receiver: receiverProfile
+            },
             unread_count: 0,
             participant_name: otherUserName,
             participant_type: otherUserType
@@ -199,8 +222,14 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
         }
 
         const conversation = conversationMap.get(otherUserId)!;
-        if (new Date(message.created_at) > new Date(conversation.last_message.created_at)) {
-          conversation.last_message = message;
+        const messageDate = new Date(message.created_at);
+        const lastMessageDate = new Date(conversation.last_message.created_at);
+        if (messageDate > lastMessageDate) {
+          conversation.last_message = {
+            ...message,
+            sender: senderProfile,
+            receiver: receiverProfile
+          };
         }
         if (!message.is_read && message.receiver_id === user.id) {
           conversation.unread_count++;
@@ -222,17 +251,39 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
 
       const { data: messagesData, error } = await supabase
         .from('messages')
-        .select(`
-          *,
-          sender:user_profiles!sender_id(first_name, last_name, user_type),
-          receiver:user_profiles!receiver_id(first_name, last_name, user_type)
-        `)
+        .select('*')
         .or(`and(sender_id.eq.${user.id},receiver_id.eq.${conversationId}),and(sender_id.eq.${conversationId},receiver_id.eq.${user.id})`)
         .order('created_at', { ascending: true });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Erreur chargement messages:', error);
+        throw error;
+      }
 
-      setMessages(messagesData || []);
+      // Enrichir les messages avec les profils
+      if (messagesData && messagesData.length > 0) {
+        const userIds = new Set<string>();
+        messagesData.forEach(msg => {
+          if (msg.sender_id) userIds.add(msg.sender_id);
+          if (msg.receiver_id) userIds.add(msg.receiver_id);
+        });
+
+        const { data: profiles } = await supabase
+          .from('user_profiles')
+          .select('id, first_name, last_name, user_type')
+          .in('id', Array.from(userIds));
+
+        const profilesMap = new Map(profiles?.map(p => [p.id, p]) || []);
+        const enrichedMessages = messagesData.map(msg => ({
+          ...msg,
+          sender: profilesMap.get(msg.sender_id),
+          receiver: profilesMap.get(msg.receiver_id)
+        }));
+
+        setMessages(enrichedMessages);
+      } else {
+        setMessages([]);
+      }
 
       // Marquer les messages comme lus
       await supabase
@@ -262,13 +313,21 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
         return;
       }
 
-      // Vérifier les règles de communication avant d'envoyer
-      const { data: receiverProfile } = await supabase
+      // Vérifier que le destinataire existe dans user_profiles
+      const { data: receiverProfile, error: receiverError } = await supabase
         .from('user_profiles')
-        .select('user_type')
+        .select('id, user_type')
         .eq('id', selectedConversation)
         .single();
 
+      if (receiverError || !receiverProfile) {
+        console.error('Erreur récupération destinataire:', receiverError);
+        alert('Destinataire introuvable. Veuillez réessayer.');
+        setSending(false);
+        return;
+      }
+
+      // Vérifier les règles de communication avant d'envoyer
       if (userType === 'owner' || userType === 'traveler') {
         // Les hôtes et voyageurs ne peuvent envoyer qu'à l'admin
         if (receiverProfile?.user_type !== 'admin' && receiverProfile?.user_type !== 'super_admin') {
@@ -278,18 +337,7 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
         }
       }
 
-      // Vérifier que le destinataire existe dans user_profiles
-      const { data: receiverCheck } = await supabase
-        .from('user_profiles')
-        .select('id')
-        .eq('id', selectedConversation)
-        .single();
-
-      if (!receiverCheck) {
-        alert('Destinataire introuvable. Veuillez réessayer.');
-        setSending(false);
-        return;
-      }
+      console.log('Envoi message de', user.id, 'vers', selectedConversation);
 
       // Insérer le message dans la base de données
       const { data: insertedMessage, error } = await supabase
@@ -301,11 +349,7 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
           content: newMessage.trim(),
           is_read: false
         }])
-        .select(`
-          *,
-          sender:user_profiles!sender_id(first_name, last_name, user_type),
-          receiver:user_profiles!receiver_id(first_name, last_name, user_type)
-        `)
+        .select('*')
         .single();
 
       if (error) {
@@ -361,13 +405,21 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
         return;
       }
 
-      // Vérifier les règles de communication avant d'envoyer
-      const { data: receiverProfile } = await supabase
+      // Vérifier que le destinataire existe dans user_profiles
+      const { data: receiverProfile, error: receiverError } = await supabase
         .from('user_profiles')
-        .select('user_type')
+        .select('id, user_type')
         .eq('id', selectedReceiverId)
         .single();
 
+      if (receiverError || !receiverProfile) {
+        console.error('Erreur récupération destinataire:', receiverError);
+        alert('Destinataire introuvable. Veuillez réessayer.');
+        setSending(false);
+        return;
+      }
+
+      // Vérifier les règles de communication avant d'envoyer
       if (userType === 'owner' || userType === 'traveler') {
         // Les hôtes et voyageurs ne peuvent envoyer qu'à l'admin
         if (receiverProfile?.user_type !== 'admin' && receiverProfile?.user_type !== 'super_admin') {
@@ -376,6 +428,8 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
           return;
         }
       }
+
+      console.log('Nouveau message de', user.id, 'vers', selectedReceiverId);
 
       // Insérer le message dans la base de données
       const { data: insertedMessage, error } = await supabase

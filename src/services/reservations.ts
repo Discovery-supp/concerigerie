@@ -176,17 +176,28 @@ export const reservationsService = {
   // Vérifier la disponibilité d'une propriété
   async checkAvailability(propertyId: string, checkIn: string, checkOut: string) {
     try {
-      const { data, error } = await supabase
+      // Récupérer toutes les réservations pour cette propriété
+      const { data: allReservations, error } = await supabase
         .from('reservations')
-        .select('*')
+        .select('check_in, check_out')
         .eq('property_id', propertyId)
         .in('status', ['confirmed', 'pending'])
-        .or(`check_in.lte.${checkOut},check_out.gte.${checkIn}`)
 
       if (error) throw error
 
+      // Vérifier les chevauchements côté client pour plus de fiabilité
+      const hasConflict = allReservations?.some(reservation => {
+        const resCheckIn = new Date(reservation.check_in)
+        const resCheckOut = new Date(reservation.check_out)
+        const newCheckIn = new Date(checkIn)
+        const newCheckOut = new Date(checkOut)
+        
+        // Deux périodes se chevauchent si: start1 < end2 AND end1 > start2
+        return resCheckIn < newCheckOut && resCheckOut > newCheckIn
+      })
+
       // Si des réservations existent dans cette période, la propriété n'est pas disponible
-      return data.length === 0
+      return !hasConflict
     } catch (error) {
       console.error('Erreur vérification disponibilité:', error)
       throw error

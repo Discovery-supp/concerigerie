@@ -84,6 +84,13 @@ const HostDashboard: React.FC = () => {
   useEffect(() => {
     loadDashboardData();
     getCurrentUser();
+    
+    // Recharger les données toutes les 30 secondes pour voir les nouvelles réservations
+    const interval = setInterval(() => {
+      loadDashboardData();
+    }, 30000);
+    
+    return () => clearInterval(interval);
   }, []);
 
   const getCurrentUser = async () => {
@@ -115,16 +122,42 @@ const HostDashboard: React.FC = () => {
       let reservationsData: any[] = [];
       
       if (propertyIds.length > 0) {
-        const { data: reservations } = await supabase
+        const { data: reservations, error: resError } = await supabase
           .from('reservations')
           .select(`
             *,
-            user_profiles!reservations_guest_id_fkey(first_name, last_name, email, phone),
-            properties!reservations_property_id_fkey(title)
+            property:properties(id, title, address)
           `)
           .in('property_id', propertyIds)
           .eq('status', 'pending') // Seulement les réservations en attente
           .order('created_at', { ascending: false });
+
+        if (resError) {
+          console.error('Erreur chargement réservations en attente:', resError);
+        } else {
+          console.log('Réservations en attente chargées:', reservations?.length || 0, 'pour', propertyIds.length, 'propriétés');
+        }
+
+        // Enrichir les réservations avec les profils des invités
+        if (reservations && reservations.length > 0) {
+          const guestIds = [...new Set(reservations.map(r => r.guest_id).filter(Boolean))];
+          if (guestIds.length > 0) {
+            const { data: guestProfiles, error: guestError } = await supabase
+              .from('user_profiles')
+              .select('id, first_name, last_name, phone')
+              .in('id', guestIds);
+
+            if (guestError) {
+              console.error('Erreur chargement profils invités:', guestError);
+            } else {
+              // Fusionner les données
+              const guestMap = new Map(guestProfiles?.map(g => [g.id, g]) || []);
+              reservations.forEach(reservation => {
+                reservation.guest = guestMap.get(reservation.guest_id);
+              });
+            }
+          }
+        }
 
         reservationsData = reservations || [];
         setReservations(reservationsData);
@@ -332,10 +365,10 @@ const HostDashboard: React.FC = () => {
                       <div className="flex items-center space-x-3">
                         <div>
                           <h3 className="text-sm font-medium text-gray-900">
-                            {reservation.guest_name || 'Invité'}
+                            {reservation.guest ? `${reservation.guest.first_name} ${reservation.guest.last_name}` : 'Invité'}
                           </h3>
                           <p className="text-sm text-gray-500">
-                            {reservation.property_title}
+                            {reservation.property?.title || 'Propriété'}
                           </p>
                         </div>
                       </div>
