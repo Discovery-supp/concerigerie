@@ -44,13 +44,20 @@ const MyReservationsPage: React.FC = () => {
             filter: `guest_id=eq.${user.id}`
           },
           (payload) => {
-            console.log('Changement de réservation:', payload);
+            // eslint-disable-next-line no-console
+            console.log('[MyReservations] realtime event:', payload.eventType, payload.new?.id || payload.old?.id);
             loadReservations(); // Recharger les réservations
           }
         )
         .subscribe();
 
+      // Fallback polling toutes les 30s au cas où Realtime échoue
+      const pollId = window.setInterval(() => {
+        loadReservations();
+      }, 30000);
+
       return () => {
+        window.clearInterval(pollId);
         supabase.removeChannel(reservationChannel);
       };
     };

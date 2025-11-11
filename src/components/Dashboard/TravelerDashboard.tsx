@@ -21,15 +21,21 @@ const TravelerDashboard: React.FC<TravelerDashboardProps> = ({ userId }) => {
 
   useEffect(() => {
     let cleanup: (() => void) | undefined;
+    let pollId: number | undefined;
     
     const setupData = async () => {
       cleanup = await loadData();
+      // Fallback polling toutes les 30s si Realtime indisponible
+      pollId = window.setInterval(() => {
+        loadData();
+      }, 30000) as unknown as number;
     };
     
     setupData();
     
     return () => {
       if (cleanup) cleanup();
+      if (pollId) window.clearInterval(pollId);
     };
   }, [userId]);
 
