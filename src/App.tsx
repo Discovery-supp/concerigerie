@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { useEffect } from 'react';
 import Header from './components/Layout/Header';
 import Footer from './components/Layout/Footer';
@@ -22,10 +22,12 @@ import MyReservationsPage from './pages/MyReservationsPage';
 import MessagingPage from './pages/MessagingPage';
 import PropertyManagementPage from './pages/PropertyManagementPage';
 import SettingsPage from './pages/SettingsPage';
+import { supabase } from './lib/supabase';
 
 // Composant interne pour gérer l'affichage conditionnel du Header/Footer
 const AppContent: React.FC = () => {
   const location = useLocation();
+  const navigate = useNavigate();
   const currentUser = null; // Changez à un objet utilisateur pour tester les états connectés
   const userType = 'owner'; // 'admin', 'owner', 'traveler', 'provider'
 
@@ -71,7 +73,28 @@ const AppContent: React.FC = () => {
 
         {/* Bouton flottant de retour au tableau de bord pour les pages compte */}
         {isAccountPage && (
-          <div className="fixed bottom-6 right-6 z-[100]">
+          <div className="fixed bottom-6 right-6 z-[100] flex flex-col items-end gap-2">
+            <div className="flex gap-2">
+              <a
+                href="/"
+                className="px-4 py-3 rounded-full shadow-lg bg-gray-700 hover:bg-gray-800 text-white text-sm font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+                aria-label="Aller à l’accueil"
+              >
+                Accueil
+              </a>
+              <button
+                onClick={async () => {
+                  try {
+                    await supabase.auth.signOut();
+                  } catch {}
+                  navigate('/');
+                }}
+                className="px-4 py-3 rounded-full shadow-lg bg-red-600 hover:bg-red-700 text-white text-sm font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                aria-label="Se déconnecter et revenir à l’accueil"
+              >
+                Déconnexion
+              </button>
+            </div>
             <a
               href="/dashboard"
               className="px-4 py-3 rounded-full shadow-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
