@@ -320,6 +320,62 @@ const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSu
 
       if (error) throw error;
 
+      // Notifications: informer le propriétaire et les administrateurs
+      try {
+        // Récupérer propriétaire de la propriété
+        const { data: propOwner } = await supabase
+          .from('properties')
+          .select('owner_id, title')
+          .eq('id', property.id)
+          .single();
+
+        const notificationsToInsert: any[] = [];
+
+        // Notification au propriétaire (host)
+        if (propOwner?.owner_id) {
+          notificationsToInsert.push({
+            user_id: propOwner.owner_id,
+            type: 'new_reservation',
+            title: 'Nouvelle réservation',
+            message: `Vous avez une nouvelle réservation pour ${propOwner.title || 'votre propriété'}.`,
+            data: {
+              reservation_id: reservation.id,
+              property_id: property.id,
+              check_in: checkIn,
+              check_out: checkOut
+            },
+            is_read: false
+          });
+        }
+
+        // Notifications aux admins
+        const { data: admins } = await supabase
+          .from('user_profiles')
+          .select('id')
+          .in('user_type', ['admin', 'super_admin']);
+
+        if (admins && admins.length > 0) {
+          admins.forEach(a => notificationsToInsert.push({
+            user_id: a.id,
+            type: 'new_reservation',
+            title: 'Nouvelle réservation',
+            message: `Une nouvelle réservation a été créée pour la propriété ${propOwner?.title || property.id}.`,
+            data: {
+              reservation_id: reservation.id,
+              property_id: property.id,
+              guest_id: user.id
+            },
+            is_read: false
+          }));
+        }
+
+        if (notificationsToInsert.length > 0) {
+          await supabase.from('notifications').insert(notificationsToInsert);
+        }
+      } catch (notifError) {
+        console.warn('Notification non critique:', notifError);
+      }
+
       // Désactiver l'envoi d'emails pour l'instant
       // await sendBookingNotifications(reservation.id);
 
