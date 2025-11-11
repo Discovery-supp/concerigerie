@@ -68,6 +68,19 @@ const AppContent: React.FC = () => {
           <Route path="/become-provider" element={<ProviderForm />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Routes>
+
+        {/* Bouton flottant de retour au tableau de bord pour les pages compte */}
+        {isAccountPage && (
+          <div className="fixed bottom-6 right-6 z-[100]">
+            <a
+              href="/dashboard"
+              className="px-4 py-3 rounded-full shadow-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              aria-label="Retour au tableau de bord"
+            >
+              ← Retour au tableau de bord
+            </a>
+          </div>
+        )}
       </main>
       
       {!isAccountPage && <Footer />}
