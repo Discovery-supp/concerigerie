@@ -73,6 +73,10 @@ const MyReservationsPage: React.FC = () => {
   const loadReservations = async () => {
     try {
       setLoading(true);
+      // Vérification rapide des variables d'environnement Supabase et session
+      // (aide au diagnostic sans impacter l'UI)
+      // eslint-disable-next-line no-console
+      console.log('[MyReservations] SUPABASE_URL:', (import.meta as any)?.env?.VITE_SUPABASE_URL || (window as any)?.SUPABASE_URL || 'not-set');
       const { data: { user } } = await supabase.auth.getUser();
 
       if (!user) {
@@ -80,7 +84,12 @@ const MyReservationsPage: React.FC = () => {
         return;
       }
 
+      // eslint-disable-next-line no-console
+      console.log('[MyReservations] guest_id:', user.id);
+
       const data = await reservationsService.getUserReservations(user.id);
+      // eslint-disable-next-line no-console
+      console.log('[MyReservations] reservations loaded:', Array.isArray(data) ? data.length : 0, data);
       setReservations(data);
     } catch (error) {
       console.error('Erreur chargement réservations:', error);

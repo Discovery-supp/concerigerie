@@ -109,6 +109,9 @@ const HostDashboard: React.FC = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
+      // eslint-disable-next-line no-console
+      console.log('[HostDashboard] currentUserId:', user.id);
+
       // Charger les propriétés de l'hôte
       const { data: hostProperties } = await supabase
         .from('properties')
@@ -117,8 +120,11 @@ const HostDashboard: React.FC = () => {
 
       setProperties(hostProperties || []);
 
-      // Charger les réservations - Les hôtes voient seulement les demandes en attente pour confirmation
       const propertyIds = hostProperties?.map(p => p.id) || [];
+      // eslint-disable-next-line no-console
+      console.log('[HostDashboard] propertyIds:', propertyIds);
+
+      // Charger les réservations - Les hôtes voient seulement les demandes en attente pour confirmation
       let reservationsData: any[] = [];
       
       if (propertyIds.length > 0) {
@@ -135,7 +141,8 @@ const HostDashboard: React.FC = () => {
         if (resError) {
           console.error('Erreur chargement réservations en attente:', resError);
         } else {
-          console.log('Réservations en attente chargées:', reservations?.length || 0, 'pour', propertyIds.length, 'propriétés');
+          // eslint-disable-next-line no-console
+          console.log('[HostDashboard] pending reservations loaded:', reservations?.length || 0, reservations);
         }
 
         // Enrichir les réservations avec les profils des invités
@@ -150,7 +157,6 @@ const HostDashboard: React.FC = () => {
             if (guestError) {
               console.error('Erreur chargement profils invités:', guestError);
             } else {
-              // Fusionner les données
               const guestMap = new Map(guestProfiles?.map(g => [g.id, g]) || []);
               reservations.forEach(reservation => {
                 reservation.guest = guestMap.get(reservation.guest_id);
