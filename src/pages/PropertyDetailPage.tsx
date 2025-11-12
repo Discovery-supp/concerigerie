@@ -327,47 +327,6 @@ const PropertyDetailPage: React.FC = () => {
               )}
             </div>
 
-            {/* Informations sur l'hôte */}
-            <div className="bg-white rounded-2xl p-6 shadow-lg">
-              <div className="flex items-center space-x-4 mb-4">
-                <div className="w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center">
-                  <Users className="w-8 h-8 text-primary" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-xl font-semibold text-primary mb-2">
-                    Hébergement proposé par l'hôte
-                  </h3>
-                  {hostInfo && (
-                    <div className="text-sm text-secondary mb-2">
-                      <p className="font-medium">
-                        {hostInfo.first_name} {hostInfo.last_name}
-                      </p>
-                      {hostInfo.created_at && (
-                        <p className="text-gray-500">
-                          Membre depuis {new Date(hostInfo.created_at).getFullYear()}
-                        </p>
-                      )}
-                    </div>
-                  )}
-                  <div className="flex items-center space-x-4 text-secondary text-sm">
-                    <span>{property.guests} voyageurs</span>
-                    <span>{property.bedrooms} chambres</span>
-                    <span>{property.beds} lits</span>
-                    <span>{property.bathrooms} salles de bain</span>
-                  </div>
-                </div>
-              </div>
-              <div className="mt-4 pt-4 border-t border-gray-200">
-                <button
-                  onClick={() => navigate('/messaging')}
-                  className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center justify-center space-x-2"
-                >
-                  <MessageCircle className="w-4 h-4" />
-                  <span>Contacter l'hôte</span>
-                </button>
-              </div>
-            </div>
-
             {/* Description */}
             <div className="bg-white rounded-2xl p-6 shadow-lg">
               <h3 className="text-xl font-semibold font-heading text-primary mb-4">
@@ -472,7 +431,7 @@ const PropertyDetailPage: React.FC = () => {
           </div>
 
           {/* Sidebar de réservation */}
-          <div className="lg:col-span-1">
+          <div className="lg:col-span-1 space-y-6">
             <RealTimeBooking
               property={{
                 id: property.id,
@@ -492,6 +451,47 @@ const PropertyDetailPage: React.FC = () => {
                 console.log('Réservation créée:', reservationId);
               }}
             />
+
+            {/* Informations sur l'hôte */}
+            <div className="bg-white rounded-2xl p-6 shadow-lg">
+              <div className="flex items-center space-x-4 mb-4">
+                <div className="w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center">
+                  <Users className="w-8 h-8 text-primary" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-xl font-semibold text-primary mb-2">
+                    Hébergement proposé par l'hôte
+                  </h3>
+                  {hostInfo && (
+                    <div className="text-sm text-secondary mb-2">
+                      <p className="font-medium">
+                        {hostInfo.first_name} {hostInfo.last_name}
+                      </p>
+                      {hostInfo.created_at && (
+                        <p className="text-gray-500">
+                          Membre depuis {new Date(hostInfo.created_at).getFullYear()}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  <div className="flex items-center space-x-4 text-secondary text-sm">
+                    <span>{property.guests} voyageurs</span>
+                    <span>{property.bedrooms} chambres</span>
+                    <span>{property.beds} lits</span>
+                    <span>{property.bathrooms} salles de bain</span>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-4 pt-4 border-t border-gray-200">
+                <button
+                  onClick={() => navigate('/messaging')}
+                  className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center justify-center space-x-2"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                  <span>Contacter l'hôte</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
