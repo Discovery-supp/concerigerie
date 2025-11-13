@@ -188,11 +188,24 @@ export const paymentsService = {
     };
   },
 
-  async updateReservationPaymentStatus(reservationId: string, paymentStatus: string): Promise<void> {
+  async updateReservationPaymentStatus(
+    reservationId: string,
+    paymentStatus: string,
+    options?: { autoConfirm?: boolean }
+  ): Promise<void> {
     try {
+      const updates: Record<string, any> = {
+        payment_status: paymentStatus,
+        updated_at: new Date().toISOString(),
+      };
+
+      if (options?.autoConfirm && paymentStatus === 'paid') {
+        updates.status = 'confirmed';
+      }
+
       const { error } = await supabase
         .from('reservations')
-        .update({ payment_status: paymentStatus })
+        .update(updates)
         .eq('id', reservationId);
 
       if (error) throw error;

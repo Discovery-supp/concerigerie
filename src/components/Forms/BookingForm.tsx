@@ -773,11 +773,15 @@ const BookingForm: React.FC = () => {
       );
 
       if (paymentResult.success) {
-        await paymentsService.updateReservationPaymentStatus(
-          reservation.id,
+        const paymentStatus =
           selectedPaymentMethod.type === 'cash' || selectedPaymentMethod.type === 'bank_transfer'
             ? 'pending'
-            : 'paid'
+            : 'paid';
+
+        await paymentsService.updateReservationPaymentStatus(
+          reservation.id,
+          paymentStatus,
+          { autoConfirm: paymentStatus === 'paid' }
         );
       }
 

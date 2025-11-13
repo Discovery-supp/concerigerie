@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, Filter, MapPin, Star, Users, Bed, Bath, Wifi, Car, School as Pool, ChevronDown } from 'lucide-react';
+import { Search, Filter, MapPin, Star, Users, Bed, Bath, Wifi, Car, School as Pool, ChevronDown, ArrowLeft } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useEffect } from 'react';
 import propertiesService from '../services/properties';
@@ -21,6 +21,21 @@ const PropertiesPage: React.FC = () => {
   const [priceRange, setPriceRange] = useState([0, 500]);
   const [selectedAmenities, setSelectedAmenities] = useState<string[]>([]);
   const [showFilters, setShowFilters] = useState(false);
+  const [isFromDashboard, setIsFromDashboard] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  // Vérifier si l'utilisateur vient du dashboard et s'il est connecté
+  useEffect(() => {
+    const fromDashboard = searchParams.get('from') === 'dashboard';
+    setIsFromDashboard(fromDashboard);
+    
+    // Vérifier si l'utilisateur est connecté
+    const checkAuth = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      setIsAuthenticated(!!user);
+    };
+    checkAuth();
+  }, [searchParams]);
 
   // Lire les paramètres de recherche depuis l'URL au chargement
   useEffect(() => {
@@ -220,12 +235,27 @@ const PropertiesPage: React.FC = () => {
   };
 
   const handlePropertyClick = (propertyId: string) => {
-    navigate(`/property/${propertyId}`);
+    // Conserver le paramètre from=dashboard si présent
+    const fromParam = isFromDashboard ? '?from=dashboard' : '';
+    navigate(`/property/${propertyId}${fromParam}`);
   };
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {/* Bouton retour au tableau de bord si on vient du dashboard */}
+        {(isFromDashboard && isAuthenticated) && (
+          <div className="mb-6">
+            <button
+              onClick={() => navigate('/dashboard')}
+              className="flex items-center space-x-2 text-primary hover:text-primary-light transition-colors font-medium"
+            >
+              <ArrowLeft className="w-5 h-5" />
+              <span>Retour au tableau de bord</span>
+            </button>
+          </div>
+        )}
+
         {/* En-tête */}
         <div className="mb-8">
           <h1 className="text-4xl font-bold font-heading text-primary mb-4">

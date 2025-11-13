@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { Calendar, Users, CreditCard, Shield, CheckCircle, Clock } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import PaymentModal from './PaymentModal';
+import { useToast } from '../../contexts/ToastContext';
+import { messages } from '../../utils/messages';
 
 interface Property {
   id: string;
@@ -32,6 +34,7 @@ interface AdditionalService {
 
 const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSuccess }) => {
   const navigate = useNavigate();
+  const { showError, showSuccess } = useToast();
   const [checkIn, setCheckIn] = useState('');
   const [checkOut, setCheckOut] = useState('');
   const [guests, setGuests] = useState(1);
@@ -262,7 +265,7 @@ const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSu
     // Vérifier que l'utilisateur est connecté (compte obligatoire)
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
-      alert('Vous devez créer un compte pour réserver. Veuillez vous connecter ou créer un compte.');
+      showError(messages.error.unauthorized);
       navigate('/login?redirect=/property/' + property.id);
       return;
     }
@@ -286,7 +289,7 @@ const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSu
       if (!price) throw new Error('Calcul de prix invalide');
 
       // Créer la réservation avec statut 'pending' pour que l'hôte puisse la voir
-      const { data: reservation, error } = await supabase
+      const { data: createdReservation, error } = await supabase
         .from('reservations')
         .insert({
           property_id: property.id,
@@ -319,6 +322,24 @@ const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSu
         .single();
 
       if (error) throw error;
+
+      let reservation = createdReservation;
+
+      if (paymentData.payment_status === 'paid' && paymentData.payment_method !== 'cash') {
+        const { data: confirmedReservation, error: confirmError } = await supabase
+          .from('reservations')
+          .update({
+            status: 'confirmed',
+            payment_status: 'paid',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', createdReservation.id)
+          .select()
+          .single();
+
+        if (confirmError) throw confirmError;
+        reservation = confirmedReservation;
+      }
 
       // Notifications: informer le propriétaire et les administrateurs
       try {
@@ -383,7 +404,12 @@ const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSu
         onBookingSuccess(reservation.id);
       }
 
-      alert('Réservation créée avec succès ! Elle est maintenant en attente de confirmation par l\'hôte.');
+      const autoConfirmed = reservation.status === 'confirmed';
+      showSuccess(
+        autoConfirmed
+          ? messages.success.reservationConfirmed
+          : messages.success.reservationCreated
+      );
       setShowPayment(false);
       
       // Réinitialiser le formulaire
@@ -392,10 +418,12 @@ const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSu
       setGuests(1);
       
       // Rediriger vers la page des réservations pour voir la nouvelle réservation
-      navigate('/my-reservations');
+      setTimeout(() => {
+        navigate('/my-reservations');
+      }, 1500);
     } catch (error: any) {
       console.error('Erreur création réservation:', error);
-      alert('Erreur lors de la réservation: ' + error.message);
+      showError(messages.error.reservationFailed + (error.message ? ` ${error.message}` : ''));
     } finally {
       setLoading(false);
     }

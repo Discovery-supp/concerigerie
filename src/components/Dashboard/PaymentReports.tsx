@@ -43,7 +43,7 @@ const PaymentReports: React.FC<PaymentReportsProps> = ({ userId, userType }) => 
             created_at,
             property:properties!inner(owner_id, price_per_night)
           `)
-          .eq('properties.owner_id', userId)
+          .eq('property.owner_id', userId)
           .eq('status', 'completed');
 
         // Calculer les revenus par mois

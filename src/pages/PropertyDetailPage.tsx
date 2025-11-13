@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { Star, MapPin, Users, Bed, Bath, Wifi, Car, School as Pool, ChevronLeft, ChevronRight, Calendar, CreditCard, ArrowLeft, MessageCircle } from 'lucide-react';
 import OptimizedImage from '../components/Common/OptimizedImage';
 import propertiesService from '../services/properties';
@@ -9,12 +9,28 @@ import { supabase } from '../lib/supabase';
 const PropertyDetailPage: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [showBookingForm, setShowBookingForm] = useState(false);
   const [property, setProperty] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [reviews, setReviews] = useState<any[]>([]);
   const [hostInfo, setHostInfo] = useState<any>(null);
+  const [isFromDashboard, setIsFromDashboard] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  // Vérifier si on vient du dashboard
+  useEffect(() => {
+    const fromDashboard = searchParams.get('from') === 'dashboard';
+    setIsFromDashboard(fromDashboard);
+    
+    // Vérifier si l'utilisateur est connecté
+    const checkAuth = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      setIsAuthenticated(!!user);
+    };
+    checkAuth();
+  }, [searchParams]);
 
   useEffect(() => {
     if (id) {
@@ -201,13 +217,21 @@ const PropertyDetailPage: React.FC = () => {
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Bouton retour */}
-        <button
-          onClick={() => navigate('/properties')}
-          className="mb-4 flex items-center space-x-2 text-gray-600 hover:text-gray-900"
-        >
-          <ArrowLeft className="w-5 h-5" />
-          <span>Retour aux propriétés</span>
-        </button>
+        <div className="mb-4 flex items-center space-x-4">
+          <button
+            onClick={() => {
+              if (isFromDashboard && isAuthenticated) {
+                navigate('/dashboard');
+              } else {
+                navigate('/properties' + (isFromDashboard ? '?from=dashboard' : ''));
+              }
+            }}
+            className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 transition-colors"
+          >
+            <ArrowLeft className="w-5 h-5" />
+            <span>{isFromDashboard && isAuthenticated ? 'Retour au tableau de bord' : 'Retour aux propriétés'}</span>
+          </button>
+        </div>
 
         {/* En-tête */}
         <div className="mb-8">

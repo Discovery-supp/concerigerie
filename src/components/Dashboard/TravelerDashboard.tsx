@@ -164,7 +164,7 @@ const TravelerDashboard: React.FC<TravelerDashboardProps> = ({ userId }) => {
               title="Rechercher un logement"
               description="Trouver votre prochain séjour"
               icon={<Search className="w-6 h-6" />}
-              onClick={() => navigate('/properties')}
+              onClick={() => navigate('/properties?from=dashboard')}
               color="green"
             />
             <QuickActionCard
@@ -218,7 +218,7 @@ const TravelerDashboard: React.FC<TravelerDashboardProps> = ({ userId }) => {
             <Search className="w-16 h-16 text-gray-300 mx-auto mb-4" />
             <p className="text-gray-600 mb-4">Utilisez notre moteur de recherche avancé</p>
             <button
-              onClick={() => navigate('/properties')}
+              onClick={() => navigate('/properties?from=dashboard')}
               className="px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary-light transition-colors"
             >
               Voir toutes les propriétés

@@ -132,10 +132,9 @@ const HostDashboard: React.FC = () => {
           .from('reservations')
           .select(`
             *,
-            property:properties(id, title, address)
+            property:properties!inner(id, title, address, owner_id)
           `)
-          .in('property_id', propertyIds)
-          .eq('status', 'pending') // Seulement les réservations en attente
+          .eq('property.owner_id', user.id)
           .order('created_at', { ascending: false });
 
         if (resError) {
@@ -257,6 +256,9 @@ const HostDashboard: React.FC = () => {
     }
   };
 
+  const pendingReservations = reservations.filter(reservation => reservation.status === 'pending');
+  const confirmedReservations = reservations.filter(reservation => reservation.status === 'confirmed');
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -354,108 +356,174 @@ const HostDashboard: React.FC = () => {
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold text-gray-900">Demandes de réservation en attente</h2>
                 <span className="text-sm text-gray-500">
-                  {reservations.filter(r => r.status === 'pending').length} en attente
+                  {pendingReservations.length} en attente
                 </span>
               </div>
             </div>
             <div className="divide-y divide-gray-200">
-              {reservations.filter(r => r.status === 'pending').length === 0 ? (
-                <div className="p-6 text-center text-gray-500">
-                  Aucune demande de réservation en attente
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">
+                    Demandes en attente
+                  </h3>
+                  <span className="text-xs text-gray-500">
+                    {pendingReservations.length} réservation(s)
+                  </span>
                 </div>
-              ) : (
-                reservations.filter(r => r.status === 'pending').map((reservation) => (
-                <div key={reservation.id} className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-3">
-                        <div>
-                          <h3 className="text-sm font-medium text-gray-900">
-                            {reservation.guest ? `${reservation.guest.first_name} ${reservation.guest.last_name}` : 'Invité'}
-                          </h3>
-                          <p className="text-sm text-gray-500">
-                            {reservation.property?.title || 'Propriété'}
-                          </p>
+                {pendingReservations.length === 0 ? (
+                  <div className="text-center text-gray-500">
+                    Aucune demande de réservation en attente
+                  </div>
+                ) : (
+                  pendingReservations.map((reservation) => (
+                    <div key={reservation.id} className="py-4 first:pt-0 last:pb-0 border-b last:border-b-0 border-gray-100">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-3">
+                            <div>
+                              <h3 className="text-sm font-medium text-gray-900">
+                                {reservation.guest ? `${reservation.guest.first_name} ${reservation.guest.last_name}` : 'Invité'}
+                              </h3>
+                              <p className="text-sm text-gray-500">
+                                {reservation.property?.title || 'Propriété'}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="mt-2 flex items-center space-x-4 text-sm text-gray-500">
+                            <span>
+                              {new Date(reservation.check_in).toLocaleDateString('fr-FR')} - 
+                              {new Date(reservation.check_out).toLocaleDateString('fr-FR')}
+                            </span>
+                            <span>€{reservation.total_amount}</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(reservation.status)}`}>
+                            {getStatusIcon(reservation.status)}
+                            <span className="ml-1">En attente</span>
+                          </span>
+                          <button
+                            onClick={async () => {
+                              try {
+                                const { error } = await supabase
+                                  .from('reservations')
+                                  .update({ 
+                                    status: 'confirmed',
+                                    payment_status: 'paid'
+                                  })
+                                  .eq('id', reservation.id);
+                                if (!error) {
+                                  // Créer une notification pour le guest
+                                  const { data: { user } } = await supabase.auth.getUser();
+                                  if (user && reservation.guest_id) {
+                                    await supabase
+                                      .from('notifications')
+                                      .insert({
+                                        user_id: reservation.guest_id,
+                                        type: 'reservation_confirmed',
+                                        title: 'Réservation confirmée',
+                                        message: `Votre réservation pour ${reservation.property?.title || 'la propriété'} a été confirmée par l'hôte.`,
+                                        data: {
+                                          reservation_id: reservation.id,
+                                          property_id: reservation.property_id
+                                        },
+                                        is_read: false
+                                      });
+                                  }
+                                  alert('Réservation confirmée avec succès ! Le client a été notifié.');
+                                  loadDashboardData();
+                                } else {
+                                  alert('Erreur lors de la confirmation: ' + error.message);
+                                }
+                              } catch (error: any) {
+                                console.error('Erreur confirmation:', error);
+                                alert('Erreur lors de la confirmation: ' + error.message);
+                              }
+                            }}
+                            className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 transition-colors"
+                          >
+                            Confirmer
+                          </button>
+                          <button
+                            onClick={async () => {
+                              try {
+                                const { error } = await supabase
+                                  .from('reservations')
+                                  .update({ status: 'cancelled' })
+                                  .eq('id', reservation.id);
+                                if (!error) {
+                                  loadDashboardData();
+                                }
+                              } catch (error) {
+                                console.error('Erreur annulation:', error);
+                              }
+                            }}
+                            className="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 transition-colors"
+                          >
+                            Refuser
+                          </button>
                         </div>
                       </div>
-                      <div className="mt-2 flex items-center space-x-4 text-sm text-gray-500">
-                        <span>
-                          {new Date(reservation.check_in).toLocaleDateString('fr-FR')} - 
-                          {new Date(reservation.check_out).toLocaleDateString('fr-FR')}
-                        </span>
-                        <span>€{reservation.total_amount}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div className="border-t border-gray-200 p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">
+                    Réservations confirmées
+                  </h3>
+                  <span className="text-xs text-gray-500">
+                    {confirmedReservations.length} réservation(s)
+                  </span>
+                </div>
+                {confirmedReservations.length === 0 ? (
+                  <div className="text-center text-gray-500">
+                    Aucune réservation confirmée pour le moment
+                  </div>
+                ) : (
+                  confirmedReservations.map((reservation) => (
+                    <div
+                      key={reservation.id}
+                      className="py-4 first:pt-0 last:pb-0 border-b last:border-b-0 border-gray-100"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-3">
+                            <div>
+                              <h3 className="text-sm font-medium text-gray-900">
+                                {reservation.guest
+                                  ? `${reservation.guest.first_name} ${reservation.guest.last_name}`
+                                  : 'Invité'}
+                              </h3>
+                              <p className="text-sm text-gray-500">
+                                {reservation.property?.title || 'Propriété'}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="mt-2 flex items-center space-x-4 text-sm text-gray-500">
+                            <span>
+                              {new Date(reservation.check_in).toLocaleDateString('fr-FR')} - 
+                              {new Date(reservation.check_out).toLocaleDateString('fr-FR')}
+                            </span>
+                            <span>€{reservation.total_amount}</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(reservation.status)}`}>
+                            {getStatusIcon(reservation.status)}
+                            <span className="ml-1">Confirmée</span>
+                          </span>
+                          <span className="text-xs text-gray-400">
+                            Créée le {new Date(reservation.created_at).toLocaleDateString('fr-FR')}
+                          </span>
+                        </div>
                       </div>
                     </div>
-                    <div className="flex items-center space-x-2">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(reservation.status)}`}>
-                        {getStatusIcon(reservation.status)}
-                        <span className="ml-1">En attente</span>
-                      </span>
-                      <button
-                        onClick={async () => {
-                          try {
-                            const { error } = await supabase
-                              .from('reservations')
-                              .update({ 
-                                status: 'confirmed',
-                                payment_status: 'paid'
-                              })
-                              .eq('id', reservation.id);
-                            if (!error) {
-                              // Créer une notification pour le guest
-                              const { data: { user } } = await supabase.auth.getUser();
-                              if (user && reservation.guest_id) {
-                                await supabase
-                                  .from('notifications')
-                                  .insert({
-                                    user_id: reservation.guest_id,
-                                    type: 'reservation_confirmed',
-                                    title: 'Réservation confirmée',
-                                    message: `Votre réservation pour ${reservation.property?.title || 'la propriété'} a été confirmée par l'hôte.`,
-                                    data: {
-                                      reservation_id: reservation.id,
-                                      property_id: reservation.property_id
-                                    },
-                                    is_read: false
-                                  });
-                              }
-                              alert('Réservation confirmée avec succès ! Le client a été notifié.');
-                              loadDashboardData();
-                            } else {
-                              alert('Erreur lors de la confirmation: ' + error.message);
-                            }
-                          } catch (error: any) {
-                            console.error('Erreur confirmation:', error);
-                            alert('Erreur lors de la confirmation: ' + error.message);
-                          }
-                        }}
-                        className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 transition-colors"
-                      >
-                        Confirmer
-                      </button>
-                      <button
-                        onClick={async () => {
-                          try {
-                            const { error } = await supabase
-                              .from('reservations')
-                              .update({ status: 'cancelled' })
-                              .eq('id', reservation.id);
-                            if (!error) {
-                              loadDashboardData();
-                            }
-                          } catch (error) {
-                            console.error('Erreur annulation:', error);
-                          }
-                        }}
-                        className="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 transition-colors"
-                      >
-                        Refuser
-                      </button>
-                    </div>
-                  </div>
-                </div>
-                ))
-              )}
+                  ))
+                )}
+              </div>
             </div>
           </div>
         </div>

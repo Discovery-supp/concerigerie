@@ -19,6 +19,7 @@ const RegisterPage: React.FC = () => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
   const userTypes = [
     { value: 'traveler', label: 'Voyageur' },
@@ -45,6 +46,7 @@ const RegisterPage: React.FC = () => {
     }
 
     setError('');
+    setSuccess('');
     setIsLoading(true);
     
     try {
@@ -55,12 +57,46 @@ const RegisterPage: React.FC = () => {
         userType: formData.userType
       });
       
-      if (result) {
-        alert('Inscription réussie ! Vérifiez votre email pour confirmer votre compte.');
-        navigate('/login');
+      if (result && result.user) {
+        setSuccess('Inscription réussie ! Vérifiez votre email pour confirmer votre compte avant de vous connecter.');
+        
+        // Réinitialiser le formulaire
+        setFormData({
+          firstName: '',
+          lastName: '',
+          email: '',
+          phone: '',
+          password: '',
+          confirmPassword: '',
+          userType: 'traveler',
+          acceptTerms: false
+        });
+        
+        // Rediriger vers la page de connexion après 3 secondes
+        setTimeout(() => {
+          navigate('/login');
+        }, 3000);
+      } else {
+        setError('Erreur lors de la création du compte. Veuillez réessayer.');
       }
     } catch (error: any) {
-      setError(error.message || 'Erreur lors de l\'inscription');
+      console.error('Erreur inscription:', error);
+      // Gérer les erreurs spécifiques de Supabase
+      let errorMessage = 'Erreur lors de l\'inscription';
+      
+      if (error.message) {
+        if (error.message.includes('already registered') || error.message.includes('already exists')) {
+          errorMessage = 'Cet email est déjà utilisé. Veuillez vous connecter ou utiliser un autre email.';
+        } else if (error.message.includes('password')) {
+          errorMessage = 'Le mot de passe ne respecte pas les critères requis.';
+        } else if (error.message.includes('email')) {
+          errorMessage = 'L\'adresse email n\'est pas valide.';
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -102,8 +138,23 @@ const RegisterPage: React.FC = () => {
         <div className="bg-white py-8 px-4 shadow-xl sm:rounded-2xl sm:px-10 border border-light-gray">
           <form className="space-y-6" onSubmit={handleSubmit}>
             {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
-                {error}
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-start">
+                <svg className="w-5 h-5 mr-2 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                </svg>
+                <span>{error}</span>
+              </div>
+            )}
+            
+            {success && (
+              <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg flex items-start">
+                <svg className="w-5 h-5 mr-2 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                </svg>
+                <div className="flex-1">
+                  <p className="font-medium">{success}</p>
+                  <p className="text-sm mt-1">Redirection vers la page de connexion dans quelques secondes...</p>
+                </div>
               </div>
             )}
 
@@ -290,9 +341,9 @@ const RegisterPage: React.FC = () => {
             <div>
               <button
                 type="submit"
-                disabled={isLoading}
+                disabled={isLoading || !!success}
                 className={`w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white transition-all ${
-                  isLoading
+                  isLoading || success
                     ? 'bg-gray-400 cursor-not-allowed'
                     : 'bg-primary hover:bg-primary-light focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary'
                 }`}
@@ -302,6 +353,8 @@ const RegisterPage: React.FC = () => {
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
                     Création du compte...
                   </div>
+                ) : success ? (
+                  'Compte créé avec succès !'
                 ) : (
                   'Créer mon compte'
                 )}

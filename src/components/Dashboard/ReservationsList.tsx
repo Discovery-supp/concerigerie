@@ -65,7 +65,8 @@ const ReservationsList: React.FC<ReservationsListProps> = ({
               { value: 'all', label: 'Toutes', count: stats.total },
               { value: 'pending', label: 'En attente', count: stats.pending },
               { value: 'confirmed', label: 'Confirmées', count: stats.confirmed },
-              { value: 'completed', label: 'Terminées', count: stats.completed }
+              { value: 'completed', label: 'Terminées', count: stats.completed },
+              { value: 'cancelled', label: 'Annulées', count: stats.cancelled }
             ].map(f => (
               <button
                 key={f.value}

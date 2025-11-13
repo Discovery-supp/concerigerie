@@ -57,9 +57,9 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ userId }) => {
         .from('reservations')
         .select(`
           *,
-          property:properties(id, title, address, images)
+          property:properties!inner(id, title, address, images, owner_id)
         `)
-        .in('property_id', propertyIds)
+        .eq('property.owner_id', userId)
         .order('check_in', { ascending: false });
 
       if (resError) {
@@ -157,7 +157,7 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ userId }) => {
       const { data: upcomingCheckIns } = await supabase
         .from('reservations')
         .select('*, property:properties!inner(owner_id, title)')
-        .eq('properties.owner_id', userId)
+        .eq('property.owner_id', userId)
         .eq('status', 'confirmed')
         .gte('check_in', today.toISOString().split('T')[0])
         .lte('check_in', tomorrow.toISOString().split('T')[0]);
@@ -165,7 +165,7 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ userId }) => {
       const { data: upcomingCheckOuts } = await supabase
         .from('reservations')
         .select('*, property:properties!inner(owner_id, title)')
-        .eq('properties.owner_id', userId)
+        .eq('property.owner_id', userId)
         .eq('status', 'confirmed')
         .gte('check_out', today.toISOString().split('T')[0])
         .lte('check_out', tomorrow.toISOString().split('T')[0]);
@@ -173,7 +173,7 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ userId }) => {
       const { data: newReservations } = await supabase
         .from('reservations')
         .select('*, property:properties!inner(owner_id, title)')
-        .eq('properties.owner_id', userId)
+        .eq('property.owner_id', userId)
         .eq('status', 'pending');
 
       const notificationsList = [

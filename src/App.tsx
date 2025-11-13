@@ -3,6 +3,8 @@ import { BrowserRouter as Router, Routes, Route, useLocation, useNavigate } from
 import { useEffect } from 'react';
 import Header from './components/Layout/Header';
 import Footer from './components/Layout/Footer';
+import { ToastProvider, useToast } from './contexts/ToastContext';
+import { ToastContainer } from './components/Common/Toast';
 import HomePage from './pages/HomePage';
 import PropertiesPage from './pages/PropertiesPage';
 import AddPropertyPage from './pages/AddPropertyPage';
@@ -23,6 +25,12 @@ import MessagingPage from './pages/MessagingPage';
 import PropertyManagementPage from './pages/PropertyManagementPage';
 import SettingsPage from './pages/SettingsPage';
 import { supabase } from './lib/supabase';
+
+// Composant pour afficher les toasts
+const ToastWrapper: React.FC = () => {
+  const { toasts, removeToast } = useToast();
+  return <ToastContainer toasts={toasts} onClose={removeToast} />;
+};
 
 // Composant interne pour gérer l'affichage conditionnel du Header/Footer
 const AppContent: React.FC = () => {
@@ -107,6 +115,9 @@ const AppContent: React.FC = () => {
       </main>
       
       {!isAccountPage && <Footer />}
+      
+      {/* Container pour les notifications toast */}
+      <ToastWrapper />
     </div>
   );
 };
@@ -130,9 +141,11 @@ function App() {
   }, []);
 
   return (
-    <Router>
-      <AppContent />
-    </Router>
+    <ToastProvider>
+      <Router>
+        <AppContent />
+      </Router>
+    </ToastProvider>
   );
 }
 
