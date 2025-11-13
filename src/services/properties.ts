@@ -16,6 +16,8 @@ export const propertiesService = {
     amenities?: string[]
     beachAccess?: boolean
     minRating?: number
+    destination?: string
+    minGuests?: number
   }) {
     if (!isSupabaseConfigured) {
       return []
@@ -56,6 +58,10 @@ export const propertiesService = {
         query = query.contains('amenities', filters.amenities)
       }
 
+      if (filters?.minGuests) {
+        query = query.gte('max_guests', filters.minGuests)
+      }
+
       const { data, error } = await query
 
       if (error) {
@@ -84,11 +90,29 @@ export const propertiesService = {
       }))
 
       // Filtrer par note si spécifié
+      let filteredProperties = propertiesWithRating
+      
       if (filters?.minRating) {
-        return propertiesWithRating.filter(property => property.rating >= filters.minRating!)
+        filteredProperties = filteredProperties.filter(property => property.rating >= filters.minRating!)
       }
 
-      return propertiesWithRating
+      // Filtrer par destination (recherche dans titre, adresse, quartier, location)
+      if (filters?.destination) {
+        const destinationLower = filters.destination.toLowerCase()
+        filteredProperties = filteredProperties.filter(property => {
+          const title = (property.title || '').toLowerCase()
+          const address = (property.address || '').toLowerCase()
+          const neighborhood = (property.neighborhood || '').toLowerCase()
+          const location = (property.location || '').toLowerCase()
+          
+          return title.includes(destinationLower) ||
+                 address.includes(destinationLower) ||
+                 neighborhood.includes(destinationLower) ||
+                 location.includes(destinationLower)
+        })
+      }
+
+      return filteredProperties
     } catch (error) {
       console.error('Erreur récupération propriétés:', error)
       throw error

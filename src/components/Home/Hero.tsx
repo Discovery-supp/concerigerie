@@ -110,7 +110,7 @@ const Hero: React.FC = () => {
               Découvrir nos Services
             </Link>
             <Link
-              to="/booking"
+              to="/properties"
               className="px-8 py-4 bg-[#183154] text-white font-semibold rounded-lg hover:bg-[#1a3a5f] transition-all shadow-lg"
             >
               Réserver Maintenant

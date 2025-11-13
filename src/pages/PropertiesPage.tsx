@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Search, Filter, MapPin, Star, Users, Bed, Bath, Wifi, Car, School as Pool, ChevronDown } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useEffect } from 'react';
 import propertiesService from '../services/properties';
 import reviewsService from '../services/reviews';
@@ -9,6 +9,7 @@ import OptimizedImage from '../components/Common/OptimizedImage';
 
 const PropertiesPage: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [properties, setProperties] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -21,9 +22,30 @@ const PropertiesPage: React.FC = () => {
   const [selectedAmenities, setSelectedAmenities] = useState<string[]>([]);
   const [showFilters, setShowFilters] = useState(false);
 
-  // Charger les propriétés depuis la base de données
+  // Lire les paramètres de recherche depuis l'URL au chargement
+  useEffect(() => {
+    const destination = searchParams.get('destination');
+    const arrival = searchParams.get('arrival');
+    const departure = searchParams.get('departure');
+    const travelers = searchParams.get('travelers');
+
+    if (destination) {
+      setSearchTerm(destination);
+    }
+    
+    // Vous pouvez utiliser arrival, departure et travelers pour filtrer les propriétés
+    // Par exemple, filtrer par disponibilité ou capacité
+    if (travelers) {
+      const numTravelers = parseInt(travelers);
+      // Filtrer les propriétés qui peuvent accueillir ce nombre de voyageurs
+      // Cela sera fait dans le filtrage des propriétés
+    }
+  }, [searchParams]);
+
+  // Charger les propriétés depuis la base de données (une seule fois au chargement)
   useEffect(() => {
     loadProperties();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadProperties = async () => {
@@ -37,6 +59,7 @@ const PropertiesPage: React.FC = () => {
         return;
       }
       
+      // Charger toutes les propriétés publiées (le filtrage se fera côté client)
       const data = await propertiesService.getProperties();
       
       // Enrichir avec les notes et avis
@@ -152,9 +175,25 @@ const PropertiesPage: React.FC = () => {
     pool: Pool
   };
 
+  // Récupérer les paramètres de recherche depuis l'URL
+  const urlDestination = searchParams.get('destination') || '';
+  const urlTravelers = searchParams.get('travelers');
+  const urlArrival = searchParams.get('arrival');
+  const urlDeparture = searchParams.get('departure');
+
   const filteredProperties = properties.filter(property => {
-    const matchesSearch = property.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         property.address?.toLowerCase().includes(searchTerm.toLowerCase());
+    // Recherche par destination (titre, adresse, quartier)
+    const searchDestination = urlDestination || searchTerm;
+    const matchesSearch = !searchDestination || 
+      property.title?.toLowerCase().includes(searchDestination.toLowerCase()) ||
+      property.address?.toLowerCase().includes(searchDestination.toLowerCase()) ||
+      property.neighborhood?.toLowerCase().includes(searchDestination.toLowerCase()) ||
+      property.location?.toLowerCase().includes(searchDestination.toLowerCase());
+    
+    // Filtrer par nombre de voyageurs (capacité maximale)
+    const numTravelers = urlTravelers ? parseInt(urlTravelers) : null;
+    const matchesCapacity = !numTravelers || (property.max_guests && property.max_guests >= numTravelers);
+    
     const matchesType = selectedType === 'all' || property.type === selectedType;
     const matchesCategory = selectedCategory === 'all' || property.category === selectedCategory;
     const matchesNeighborhood = selectedNeighborhood === 'all' || property.neighborhood === selectedNeighborhood;
@@ -162,9 +201,13 @@ const PropertiesPage: React.FC = () => {
     const matchesRating = (property.rating || 0) >= minRating;
     const matchesPrice = property.price_per_night >= priceRange[0] && property.price_per_night <= priceRange[1];
     const matchesAmenities = selectedAmenities.length === 0 || 
-      selectedAmenities.every(amenity => property.amenities.includes(amenity));
+      (property.amenities && Array.isArray(property.amenities) &&
+      selectedAmenities.every(amenity => property.amenities.includes(amenity)));
     
-    return matchesSearch && matchesType && matchesCategory && matchesNeighborhood && 
+    // Note: La vérification de disponibilité par dates nécessiterait une requête supplémentaire
+    // pour vérifier les réservations existantes. Pour l'instant, on filtre juste par capacité.
+    
+    return matchesSearch && matchesCapacity && matchesType && matchesCategory && matchesNeighborhood && 
            matchesBeachAccess && matchesRating && matchesPrice && matchesAmenities;
   });
 
@@ -197,17 +240,47 @@ const PropertiesPage: React.FC = () => {
         <div className="bg-white rounded-2xl shadow-lg p-6 mb-8">
           <div className="flex flex-col lg:flex-row gap-4">
             {/* Recherche */}
-            <div className="flex-1">
-              <div className="relative">
+            <div className="flex-1 flex gap-2">
+              <div className="relative flex-1">
                 <Search className="absolute left-3 top-3 w-5 h-5 text-secondary" />
                 <input
                   type="text"
                   placeholder="Rechercher par titre ou localisation..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      // Mettre à jour l'URL avec le nouveau terme de recherche
+                      const newParams = new URLSearchParams(searchParams);
+                      if (searchTerm.trim()) {
+                        newParams.set('destination', searchTerm.trim());
+                      } else {
+                        newParams.delete('destination');
+                      }
+                      setSearchParams(newParams);
+                    }
+                  }}
                   className="w-full pl-10 pr-4 py-3 border border-light-gray rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
                 />
               </div>
+              <button
+                type="button"
+                onClick={() => {
+                  // Mettre à jour l'URL avec le nouveau terme de recherche
+                  const newParams = new URLSearchParams(searchParams);
+                  if (searchTerm.trim()) {
+                    newParams.set('destination', searchTerm.trim());
+                  } else {
+                    newParams.delete('destination');
+                  }
+                  setSearchParams(newParams);
+                }}
+                className="px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary-light transition-colors flex items-center space-x-2 whitespace-nowrap"
+              >
+                <Search className="w-5 h-5" />
+                <span>Rechercher</span>
+              </button>
             </div>
 
             {/* Type de propriété */}
