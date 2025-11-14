@@ -53,21 +53,29 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ userId }) => {
       setProperties(propertiesData || []);
 
       // Charger les réservations avec détails complets
-      const { data: reservationsData, error: resError } = await supabase
+      // Utiliser LEFT JOIN au lieu de INNER JOIN pour ne pas perdre les réservations
+      // si la propriété n'est plus accessible
+      let reservationsData: any[] = [];
+      
+      const { data: allReservations, error: resError } = await supabase
         .from('reservations')
         .select(`
           *,
-          property:properties!inner(id, title, address, images, owner_id)
+          property:properties(id, title, address, images, owner_id)
         `)
-        .eq('property.owner_id', userId)
         .order('check_in', { ascending: false });
 
       if (resError) {
         console.error('Erreur chargement réservations:', resError);
-        throw resError;
+        // Ne pas throw, continuer avec un tableau vide
+      } else {
+        // Filtrer côté client pour ne garder que les réservations des propriétés de l'utilisateur
+        reservationsData = (allReservations || []).filter((res: any) => {
+          return res.property && res.property.owner_id === userId;
+        });
+        
+        console.log('Réservations chargées:', reservationsData?.length || 0, 'pour', propertyIds.length, 'propriétés');
       }
-
-      console.log('Réservations chargées:', reservationsData?.length || 0, 'pour', propertyIds.length, 'propriétés');
 
       // Enrichir les réservations avec les profils des invités
       if (reservationsData && reservationsData.length > 0) {

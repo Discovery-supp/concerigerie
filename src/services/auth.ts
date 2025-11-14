@@ -1,7 +1,4 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase'
-import type { Database } from '../lib/supabase'
-
-type User = Database['public']['Tables']['user_profiles']['Row']
 
 export const authService = {
   // Inscription
@@ -31,19 +28,66 @@ export const authService = {
         }
       })
 
-      if (authError) throw authError
+      if (authError) {
+        console.error('Erreur Supabase Auth:', authError)
+        throw authError
+      }
 
       if (authData.user) {
-        // Le trigger DB crée le profil; récupérer le profil
-        const { data: profileData, error: profileError } = await supabase
-          .from('user_profiles')
-          .select('*')
-          .eq('id', authData.user.id)
-          .maybeSingle()
+        // Attendre un peu pour laisser le trigger s'exécuter
+        await new Promise(resolve => setTimeout(resolve, 500))
+        
+        // Tenter de récupérer le profil créé par le trigger (plusieurs tentatives)
+        let profileData = null
+        let attempts = 0
+        const maxAttempts = 3
+        
+        while (!profileData && attempts < maxAttempts) {
+          const { data, error: profileError } = await supabase
+            .from('user_profiles')
+            .select('*')
+            .eq('id', authData.user.id)
+            .maybeSingle()
+          
+          if (data) {
+            profileData = data
+            break
+          }
+          
+          if (profileError && profileError.code !== 'PGRST116') {
+            console.warn('Erreur récupération profil (tentative', attempts + 1, '):', profileError)
+          }
+          
+          attempts++
+          if (attempts < maxAttempts) {
+            await new Promise(resolve => setTimeout(resolve, 500))
+          }
+        }
 
-        if (profileError) {
-          // Si le profil n'est pas immédiatement disponible, retourner juste l'user
-          return { user: authData.user, profile: null }
+        // Si le trigger n'a pas créé le profil, le créer manuellement
+        if (!profileData) {
+          console.log('Trigger n\'a pas créé le profil, création manuelle...')
+          const { data: upserted, error: upsertError } = await supabase
+            .from('user_profiles')
+            .upsert({
+              id: authData.user.id,
+              email: authData.user.email || email,
+              first_name: userData.firstName || 'Utilisateur',
+              last_name: userData.lastName || '',
+              phone: userData.phone || null,
+              user_type: userData.userType || 'traveler',
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            })
+            .select()
+            .maybeSingle()
+
+          if (upsertError) {
+            console.error('Erreur création manuelle du profil:', upsertError)
+            // Retourner quand même l'utilisateur, le profil pourra être créé plus tard
+            return { user: authData.user, profile: null }
+          }
+          profileData = upserted as any
         }
 
         return { user: authData.user, profile: profileData }

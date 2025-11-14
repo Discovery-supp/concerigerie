@@ -9,12 +9,17 @@ import AdminDashboard from '../components/Dashboard/AdminDashboard';
 import TravelerDashboard from '../components/Dashboard/TravelerDashboard';
 import ProviderDashboard from '../components/Dashboard/ProviderDashboard';
 
+type SupabaseAuthUser = NonNullable<
+  Awaited<ReturnType<typeof supabase.auth.getUser>>['data']['user']
+>;
+
 interface UserProfile {
   id: string;
   email: string;
   first_name: string;
   last_name: string;
-  user_type: 'owner' | 'provider' | 'partner' | 'admin' | 'traveler';
+  user_type: 'owner' | 'provider' | 'partner' | 'admin' | 'traveler' | 'super_admin';
+  phone?: string | null;
 }
 
 const DashboardPage: React.FC = () => {
@@ -52,18 +57,54 @@ const DashboardPage: React.FC = () => {
       if (profile) {
         setUser(profile as UserProfile);
         await loadStats(profile as UserProfile);
-      } else if (profileError && profileError.code !== 'PGRST116') {
-        // Erreur autre que "not found"
+      } else if (profileError && profileError.code && profileError.code !== 'PGRST116') {
         console.error('Erreur récupération profil:', profileError);
+        await handleMissingProfile(authUser);
       } else {
-        // Profil n'existe pas encore - on peut afficher un message ou créer le profil
-        console.warn('Profil utilisateur non trouvé. Le profil peut être créé plus tard.');
+        await handleMissingProfile(authUser);
       }
     } catch (error) {
       console.error('Erreur:', error);
       navigate('/login');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleMissingProfile = async (authUser: SupabaseAuthUser) => {
+    const metadata = authUser.user_metadata || {};
+    const fallbackProfile: UserProfile = {
+      id: authUser.id,
+      email: authUser.email || '',
+      first_name: metadata.firstName || metadata.first_name || 'Utilisateur',
+      last_name: metadata.lastName || metadata.last_name || '',
+      user_type: (metadata.userType || metadata.user_type || 'admin') as UserProfile['user_type'],
+      phone: metadata.phone || null
+    };
+
+    try {
+      const { data: upserted } = await supabase
+        .from('user_profiles')
+        .upsert({
+          id: fallbackProfile.id,
+          email: fallbackProfile.email,
+          first_name: fallbackProfile.first_name || 'Utilisateur',
+          last_name: fallbackProfile.last_name || '',
+          phone: fallbackProfile.phone,
+          user_type: fallbackProfile.user_type,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .select()
+        .maybeSingle();
+
+      const profileToUse = (upserted as UserProfile) || fallbackProfile;
+      setUser(profileToUse);
+      await loadStats(profileToUse);
+    } catch (creationError) {
+      console.error('Impossible de créer le profil automatiquement:', creationError);
+      setUser(fallbackProfile);
+      await loadStats(fallbackProfile);
     }
   };
 

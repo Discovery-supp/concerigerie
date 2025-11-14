@@ -43,8 +43,8 @@ const TravelerDashboard: React.FC<TravelerDashboardProps> = ({ userId }) => {
     try {
       const today = new Date().toISOString().split('T')[0];
 
-      // Réservations actuelles (check-out dans le futur) - inclure pending et confirmed
-      const { data: currentData } = await supabase
+      // Réservations actuelles (check-out dans le futur) - inclure tous les statuts sauf cancelled
+      const { data: currentData, error: currentError } = await supabase
         .from('reservations')
         .select(`
           *,
@@ -52,11 +52,15 @@ const TravelerDashboard: React.FC<TravelerDashboardProps> = ({ userId }) => {
         `)
         .eq('guest_id', userId)
         .gte('check_out', today)
-        .in('status', ['pending', 'confirmed', 'pending_cancellation'])
+        .neq('status', 'cancelled')  // Exclure seulement les annulées
         .order('created_at', { ascending: false });
 
-      // Historique (check-out dans le passé)
-      const { data: pastData } = await supabase
+      if (currentError) {
+        console.error('Erreur chargement réservations actuelles:', currentError);
+      }
+
+      // Historique (check-out dans le passé) - inclure toutes les réservations
+      const { data: pastData, error: pastError } = await supabase
         .from('reservations')
         .select(`
           *,
@@ -65,6 +69,10 @@ const TravelerDashboard: React.FC<TravelerDashboardProps> = ({ userId }) => {
         .eq('guest_id', userId)
         .lt('check_out', today)
         .order('check_out', { ascending: false });
+
+      if (pastError) {
+        console.error('Erreur chargement historique:', pastError);
+      }
 
       setCurrentReservations(currentData || []);
       setPastReservations(pastData || []);

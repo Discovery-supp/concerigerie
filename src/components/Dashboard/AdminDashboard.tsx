@@ -23,6 +23,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ userId }) => {
   const [properties, setProperties] = useState<any[]>([]);
   const [currentUserType, setCurrentUserType] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [usersError, setUsersError] = useState<string | null>(null);
   const [stats, setStats] = useState({
     totalUsers: 0,
     totalHosts: 0,
@@ -49,10 +50,24 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ userId }) => {
       setCurrentUserType(currentProfile?.user_type || null);
 
       // Charger tous les utilisateurs
-      const { data: usersData } = await supabase
+      const { data: usersData, error: usersError } = await supabase
         .from('user_profiles')
         .select('*')
         .order('created_at', { ascending: false });
+
+      if (usersError) {
+        console.error('Erreur chargement utilisateurs:', usersError);
+        console.error('Détails erreur:', {
+          message: usersError.message,
+          code: usersError.code,
+          details: usersError.details,
+          hint: usersError.hint
+        });
+        setUsersError(`Erreur: ${usersError.message} (Code: ${usersError.code || 'N/A'})`);
+      } else {
+        console.log('Utilisateurs chargés:', usersData?.length || 0, usersData);
+        setUsersError(null);
+      }
 
       // Charger toutes les réservations (y compris les demandes d'annulation)
       const { data: reservationsData } = await supabase
@@ -359,14 +374,35 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ userId }) => {
         <div className="bg-white rounded-xl shadow-md p-6">
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-xl font-semibold text-gray-900">Gestion des Utilisateurs</h3>
-            <button
-              onClick={handleExportUsers}
-              className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-light transition-colors flex items-center space-x-2"
-            >
-              <Download className="w-4 h-4" />
-              <span>Exporter</span>
-            </button>
+            <div className="flex space-x-2">
+              <button
+                onClick={loadData}
+                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors flex items-center space-x-2"
+                title="Actualiser"
+              >
+                <span>🔄</span>
+                <span>Actualiser</span>
+              </button>
+              <button
+                onClick={handleExportUsers}
+                className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-light transition-colors flex items-center space-x-2"
+              >
+                <Download className="w-4 h-4" />
+                <span>Exporter</span>
+              </button>
+            </div>
           </div>
+
+          {usersError && (
+            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-sm font-medium text-red-800">Erreur de chargement</p>
+              <p className="text-sm text-red-600 mt-1">{usersError}</p>
+              <p className="text-xs text-red-500 mt-2">
+                Vérifiez la console du navigateur (F12) pour plus de détails. 
+                Assurez-vous que le script SQL a été exécuté dans Supabase.
+              </p>
+            </div>
+          )}
           
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
@@ -375,50 +411,76 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ userId }) => {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Nom</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Téléphone</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date création</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {users.map(user => (
-                  <tr key={user.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{user.email}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {user.first_name} {user.last_name}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                        user.user_type === 'super_admin' ? 'bg-red-600 text-white' :
-                        user.user_type === 'admin' ? 'bg-red-100 text-red-800' :
-                        user.user_type === 'owner' ? 'bg-blue-100 text-blue-800' :
-                        user.user_type === 'traveler' ? 'bg-green-100 text-green-800' :
-                        user.user_type === 'provider' ? 'bg-purple-100 text-purple-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}>
-                        {user.user_type === 'super_admin' ? 'Super Admin' : user.user_type}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {new Date(user.created_at).toLocaleDateString('fr-FR')}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <div className="flex space-x-2">
-                        <button
-                          onClick={() => {/* Modifier */}}
-                          className="text-blue-600 hover:text-blue-900"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteUser(user.id)}
-                          className="text-red-600 hover:text-red-900"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                {users.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
+                      <div className="flex flex-col items-center space-y-2">
+                        <Users className="w-12 h-12 text-gray-400" />
+                        <p className="text-sm font-medium">Aucun utilisateur trouvé</p>
+                        <p className="text-xs text-gray-400">
+                          Les utilisateurs apparaîtront ici une fois qu'ils auront créé un compte.
+                        </p>
+                        <p className="text-xs text-gray-400 mt-2">
+                          Vérifiez la console du navigateur (F12) pour voir les détails de chargement.
+                        </p>
                       </div>
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  users.map(user => (
+                    <tr key={user.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{user.email}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {user.first_name} {user.last_name}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                          user.user_type === 'super_admin' ? 'bg-red-600 text-white' :
+                          user.user_type === 'admin' ? 'bg-red-100 text-red-800' :
+                          user.user_type === 'owner' ? 'bg-blue-100 text-blue-800' :
+                          user.user_type === 'traveler' ? 'bg-green-100 text-green-800' :
+                          user.user_type === 'provider' ? 'bg-purple-100 text-purple-800' :
+                          user.user_type === 'partner' ? 'bg-orange-100 text-orange-800' :
+                          'bg-gray-100 text-gray-800'
+                        }`}>
+                          {user.user_type === 'super_admin' ? 'Super Admin' : 
+                           user.user_type === 'admin' ? 'Admin' :
+                           user.user_type}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {user.phone || '—'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {user.created_at ? new Date(user.created_at).toLocaleDateString('fr-FR') : '—'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        <div className="flex space-x-2">
+                          <button
+                            onClick={() => {/* Modifier */}}
+                            className="text-blue-600 hover:text-blue-900"
+                            title="Modifier"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteUser(user.id)}
+                            className="text-red-600 hover:text-red-900"
+                            title="Supprimer"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>

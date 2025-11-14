@@ -11,8 +11,11 @@
     - Safely handles missing metadata with defaults
 */
 
--- Drop and recreate the function with metadata extraction
-CREATE OR REPLACE FUNCTION public.handle_new_user() 
+-- Drop old wrapper to avoid conflicts
+DROP TRIGGER IF EXISTS on_auth_user_created_profile ON auth.users;
+
+-- Create new function (renamed to avoid collisions)
+CREATE OR REPLACE FUNCTION public.handle_new_user_with_metadata() 
 RETURNS TRIGGER 
 SECURITY DEFINER
 SET search_path = public
@@ -52,3 +55,8 @@ EXCEPTION
     RETURN NEW;
 END;
 $$;
+
+-- Ensure trigger uses the new function (and keeps the old name for compatibility)
+CREATE TRIGGER on_auth_user_created_profile
+AFTER INSERT ON auth.users
+FOR EACH ROW EXECUTE FUNCTION public.handle_new_user_with_metadata();

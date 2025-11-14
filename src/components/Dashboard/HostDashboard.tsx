@@ -128,25 +128,33 @@ const HostDashboard: React.FC = () => {
       let reservationsData: any[] = [];
       
       if (propertyIds.length > 0) {
-        const { data: reservations, error: resError } = await supabase
+        // Utiliser LEFT JOIN au lieu de INNER JOIN pour éviter de perdre des réservations
+        const { data: allReservations, error: resError } = await supabase
           .from('reservations')
           .select(`
             *,
-            property:properties!inner(id, title, address, owner_id)
+            property:properties(id, title, address, owner_id)
           `)
-          .eq('property.owner_id', user.id)
           .order('created_at', { ascending: false });
 
         if (resError) {
           console.error('Erreur chargement réservations en attente:', resError);
         } else {
+          // Filtrer côté client pour ne garder que les réservations des propriétés de l'utilisateur
+          const reservations = (allReservations || []).filter((res: any) => {
+            return res.property && res.property.owner_id === user.id;
+          });
+          
           // eslint-disable-next-line no-console
           console.log('[HostDashboard] pending reservations loaded:', reservations?.length || 0, reservations);
+          
+          // Utiliser les réservations filtrées
+          reservationsData = reservations;
         }
 
         // Enrichir les réservations avec les profils des invités
-        if (reservations && reservations.length > 0) {
-          const guestIds = [...new Set(reservations.map(r => r.guest_id).filter(Boolean))];
+        if (reservationsData && reservationsData.length > 0) {
+          const guestIds = [...new Set(reservationsData.map((r: any) => r.guest_id).filter(Boolean))];
           if (guestIds.length > 0) {
             const { data: guestProfiles, error: guestError } = await supabase
               .from('user_profiles')
@@ -157,15 +165,14 @@ const HostDashboard: React.FC = () => {
               console.error('Erreur chargement profils invités:', guestError);
             } else {
               const guestMap = new Map(guestProfiles?.map(g => [g.id, g]) || []);
-              reservations.forEach(reservation => {
+              reservationsData.forEach((reservation: any) => {
                 reservation.guest = guestMap.get(reservation.guest_id);
               });
             }
           }
         }
 
-        reservationsData = reservations || [];
-        setReservations(reservationsData);
+        setReservations(reservationsData || []);
 
         // Charger les avis
         const { data: reviewsData } = await supabase

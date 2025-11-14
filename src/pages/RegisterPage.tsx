@@ -2,9 +2,12 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Mail, Lock, Eye, EyeOff, User, Phone } from 'lucide-react';
 import authService from '../services/auth';
+import { useToast } from '../contexts/ToastContext';
+import { messages } from '../utils/messages';
 
 const RegisterPage: React.FC = () => {
   const navigate = useNavigate();
+  const { showSuccess, showInfo } = useToast();
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -59,6 +62,9 @@ const RegisterPage: React.FC = () => {
       
       if (result && result.user) {
         setSuccess('Inscription réussie ! Vérifiez votre email pour confirmer votre compte avant de vous connecter.');
+        // Toast de confirmation
+        showSuccess(messages.success.accountCreated);
+        showInfo(messages.info.redirectingToLogin, 2500);
         
         // Réinitialiser le formulaire
         setFormData({
