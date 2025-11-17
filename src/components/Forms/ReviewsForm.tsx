@@ -56,12 +56,10 @@ const ReviewsForm: React.FC<ReviewsFormProps> = ({
     rating: 0,
     comment: '',
     aspects: {
-      cleanliness: 0,
-      communication: 0,
-      checkin: 0,
-      accuracy: 0,
-      location: 0,
-      value: 0
+      property: 0,        // Note sur la propriété
+      arrival: 0,         // Note sur l'arrivée
+      welcome: 0,         // Note sur l'accueil
+      communication: 0    // Note sur la communication
     }
   });
   const [filterProperty, setFilterProperty] = useState('');
@@ -202,24 +200,18 @@ const ReviewsForm: React.FC<ReviewsFormProps> = ({
       reviewData.reviewer_id = user.id;
       reviewData.guest_id = user.id;
       
-      // Ajouter les notes détaillées si disponibles
-      if (newReview.aspects.cleanliness > 0) {
-        reviewData.cleanliness_rating = newReview.aspects.cleanliness;
+      // Ajouter les notes détaillées spécifiques
+      if (newReview.aspects.property > 0) {
+        reviewData.accuracy_rating = newReview.aspects.property; // Utiliser accuracy_rating pour la propriété
+      }
+      if (newReview.aspects.arrival > 0) {
+        reviewData.checkin_rating = newReview.aspects.arrival; // Utiliser checkin_rating pour l'arrivée
+      }
+      if (newReview.aspects.welcome > 0) {
+        reviewData.cleanliness_rating = newReview.aspects.welcome; // Utiliser cleanliness_rating pour l'accueil
       }
       if (newReview.aspects.communication > 0) {
         reviewData.communication_rating = newReview.aspects.communication;
-      }
-      if (newReview.aspects.checkin > 0) {
-        reviewData.checkin_rating = newReview.aspects.checkin;
-      }
-      if (newReview.aspects.accuracy > 0) {
-        reviewData.accuracy_rating = newReview.aspects.accuracy;
-      }
-      if (newReview.aspects.location > 0) {
-        reviewData.location_rating = newReview.aspects.location;
-      }
-      if (newReview.aspects.value > 0) {
-        reviewData.value_rating = newReview.aspects.value;
       }
 
       const { error } = await supabase
@@ -232,12 +224,10 @@ const ReviewsForm: React.FC<ReviewsFormProps> = ({
         rating: 0,
         comment: '',
         aspects: {
-          cleanliness: 0,
-          communication: 0,
-          checkin: 0,
-          accuracy: 0,
-          location: 0,
-          value: 0
+          property: 0,
+          arrival: 0,
+          welcome: 0,
+          communication: 0
         }
       });
       setSelectedReservation('');
@@ -563,6 +553,85 @@ const ReviewsForm: React.FC<ReviewsFormProps> = ({
                   </div>
                 </div>
 
+                {/* Évaluations détaillées */}
+                <div className="space-y-4 border-t pt-4">
+                  <h4 className="text-sm font-semibold text-gray-700 mb-3">
+                    Évaluations détaillées (optionnel)
+                  </h4>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      La propriété *
+                    </label>
+                    <div className="flex items-center space-x-2">
+                      {getRatingStars(newReview.aspects.property, true, (rating) => 
+                        setNewReview(prev => ({ 
+                          ...prev, 
+                          aspects: { ...prev.aspects, property: rating }
+                        }))
+                      )}
+                      <span className="text-sm text-gray-500 ml-2">
+                        {newReview.aspects.property > 0 && `${newReview.aspects.property}/5`}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">Qualité et état de la propriété</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      L'arrivée *
+                    </label>
+                    <div className="flex items-center space-x-2">
+                      {getRatingStars(newReview.aspects.arrival, true, (rating) => 
+                        setNewReview(prev => ({ 
+                          ...prev, 
+                          aspects: { ...prev.aspects, arrival: rating }
+                        }))
+                      )}
+                      <span className="text-sm text-gray-500 ml-2">
+                        {newReview.aspects.arrival > 0 && `${newReview.aspects.arrival}/5`}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">Processus d'arrivée et remise des clés</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      L'accueil *
+                    </label>
+                    <div className="flex items-center space-x-2">
+                      {getRatingStars(newReview.aspects.welcome, true, (rating) => 
+                        setNewReview(prev => ({ 
+                          ...prev, 
+                          aspects: { ...prev.aspects, welcome: rating }
+                        }))
+                      )}
+                      <span className="text-sm text-gray-500 ml-2">
+                        {newReview.aspects.welcome > 0 && `${newReview.aspects.welcome}/5`}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">Qualité de l'accueil de l'hôte</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      La communication *
+                    </label>
+                    <div className="flex items-center space-x-2">
+                      {getRatingStars(newReview.aspects.communication, true, (rating) => 
+                        setNewReview(prev => ({ 
+                          ...prev, 
+                          aspects: { ...prev.aspects, communication: rating }
+                        }))
+                      )}
+                      <span className="text-sm text-gray-500 ml-2">
+                        {newReview.aspects.communication > 0 && `${newReview.aspects.communication}/5`}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">Réactivité et qualité de la communication</p>
+                  </div>
+                </div>
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Commentaire
@@ -572,7 +641,7 @@ const ReviewsForm: React.FC<ReviewsFormProps> = ({
                     onChange={(e) => setNewReview(prev => ({ ...prev, comment: e.target.value }))}
                     rows={4}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Partagez votre expérience..."
+                    placeholder="Partagez votre expérience détaillée..."
                   />
                 </div>
 
@@ -586,7 +655,11 @@ const ReviewsForm: React.FC<ReviewsFormProps> = ({
                   </button>
                   <button
                     type="submit"
-                    disabled={newReview.rating === 0}
+                    disabled={newReview.rating === 0 || 
+                             newReview.aspects.property === 0 || 
+                             newReview.aspects.arrival === 0 || 
+                             newReview.aspects.welcome === 0 || 
+                             newReview.aspects.communication === 0}
                     className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Publier l'avis

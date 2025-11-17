@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Calendar, Users, CreditCard, Shield, CheckCircle, Clock } from 'lucide-react';
+import { useNavigate, Link } from 'react-router-dom';
+import { Calendar, Users, CreditCard, Shield, CheckCircle, Clock, AlertCircle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import PaymentModal from './PaymentModal';
 import { useToast } from '../../contexts/ToastContext';
@@ -44,6 +44,7 @@ const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSu
   const [availabilityStatus, setAvailabilityStatus] = useState<'available' | 'unavailable' | 'checking' | null>(null);
   const [isOwner, setIsOwner] = useState(false);
   const [additionalServices, setAdditionalServices] = useState<AdditionalService[]>([]);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   // Services supplémentaires disponibles
   const availableServices = [
@@ -56,6 +57,11 @@ const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSu
   useEffect(() => {
     checkIfOwner();
     loadBlockedDates();
+    checkAuthentication();
+
+    const authListener = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsAuthenticated(!!session?.user);
+    });
     
     // S'abonner aux changements de réservations en temps réel
     const reservationChannel = supabase
@@ -71,12 +77,34 @@ const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSu
 
     return () => {
       supabase.removeChannel(reservationChannel);
+      authListener.data.subscription.unsubscribe();
     };
   }, [property.id]);
+
+  // Recalculer les prix des services supplémentaires quand les dates changent
+  useEffect(() => {
+    if (checkIn && checkOut && additionalServices.length > 0) {
+      const nights = Math.ceil((new Date(checkOut).getTime() - new Date(checkIn).getTime()) / (1000 * 60 * 60 * 24));
+      setAdditionalServices(prev => prev.map(s => ({
+        ...s,
+        totalPrice: s.unitPrice * nights
+      })));
+    }
+  }, [checkIn, checkOut]);
+
+  const checkAuthentication = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    setIsAuthenticated(!!user);
+  };
 
   const handleServiceQuantityChange = (serviceId: string, quantity: number) => {
     const service = availableServices.find(s => s.id === serviceId);
     if (!service) return;
+
+    // Calculer le nombre de nuits pour le calcul du prix par jour
+    const nights = checkIn && checkOut 
+      ? Math.ceil((new Date(checkOut).getTime() - new Date(checkIn).getTime()) / (1000 * 60 * 60 * 24))
+      : 1;
 
     setAdditionalServices(prev => {
       const existing = prev.find(s => s.id === serviceId);
@@ -84,18 +112,19 @@ const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSu
         return prev.filter(s => s.id !== serviceId);
       }
       if (existing) {
+        // Prix par jour multiplié par le nombre de nuits
         return prev.map(s => 
           s.id === serviceId 
-            ? { ...s, quantity, totalPrice: service.unitPrice * quantity }
+            ? { ...s, quantity, totalPrice: service.unitPrice * nights }
             : s
         );
       }
       return [...prev, {
         id: serviceId,
         name: service.name,
-        unitPrice: service.unitPrice,
+        unitPrice: service.unitPrice, // Prix par jour
         quantity,
-        totalPrice: service.unitPrice * quantity
+        totalPrice: service.unitPrice * nights // Prix par jour * nombre de nuits
       }];
     });
   };
@@ -254,7 +283,14 @@ const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSu
 
     const subtotal = basePrice - discount;
     const cleaning = property.cleaning_fee || 0;
-    const additionalServicesTotal = additionalServices.reduce((sum, s) => sum + s.totalPrice, 0);
+    
+    // Recalculer les services supplémentaires avec le nombre de nuits actuel
+    // Les services supplémentaires sont maintenant au prix par jour
+    const additionalServicesTotal = additionalServices.reduce((sum, s) => {
+      // Le totalPrice devrait déjà être calculé avec le nombre de nuits, mais on le recalcule pour être sûr
+      return sum + (s.unitPrice * nights);
+    }, 0);
+    
     const serviceFee = (subtotal + cleaning + additionalServicesTotal) * 0.12; // 12% de frais de service
     const total = subtotal + cleaning + additionalServicesTotal + serviceFee;
 
@@ -265,8 +301,7 @@ const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSu
     // Vérifier que l'utilisateur est connecté (compte obligatoire)
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
-      showError(messages.error.unauthorized);
-      navigate('/login?redirect=/property/' + property.id);
+      showError('Vous devez créer un compte voyageur pour effectuer une réservation');
       return;
     }
 
@@ -441,6 +476,27 @@ const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSu
 
   return (
     <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-200">
+      {!isAuthenticated && (
+        <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+          <div className="flex items-start space-x-3">
+            <AlertCircle className="w-5 h-5 text-yellow-600 mt-0.5 flex-shrink-0" />
+            <div className="flex-1">
+              <h4 className="font-semibold text-yellow-900 mb-1">
+                Compte requis pour réserver
+              </h4>
+              <p className="text-sm text-yellow-800 mb-3">
+                Pour effectuer une réservation, vous devez créer un compte voyageur. C'est rapide et gratuit !
+              </p>
+              <Link
+                to={`/traveler-register?redirect=${encodeURIComponent(`/property/${property.id}`)}`}
+                className="inline-block px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-light transition-colors text-sm font-semibold"
+              >
+                Créer un compte voyageur
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
       {isOwner && (
         <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
           <p className="text-sm text-blue-800">
@@ -536,7 +592,10 @@ const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSu
                     <div className="flex-1">
                       <div className="font-medium text-gray-900">{service.name}</div>
                       <div className="text-sm text-gray-600">
-                        Prix unitaire: ${service.unitPrice.toFixed(2)}
+                        Prix par jour: ${service.unitPrice.toFixed(2)}
+                        {price && price.nights > 0 && (
+                          <span className="text-gray-500"> × {price.nights} nuit{price.nights > 1 ? 's' : ''}</span>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center space-x-3">
@@ -556,12 +615,12 @@ const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSu
                       >
                         +
                       </button>
-                      {quantity > 0 && (
+                      {quantity > 0 && price && (
                         <div className="ml-4 text-right">
                           <div className="text-sm font-semibold text-gray-900">
-                            ${(service.unitPrice * quantity).toFixed(2)}
+                            ${(service.unitPrice * price.nights).toFixed(2)}
                           </div>
-                          <div className="text-xs text-gray-500">Total</div>
+                          <div className="text-xs text-gray-500">Total ({price.nights} nuit{price.nights > 1 ? 's' : ''})</div>
                         </div>
                       )}
                     </div>
@@ -635,14 +694,24 @@ const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSu
         )}
 
         {/* Bouton de réservation */}
-        <button
-          onClick={handleBooking}
-          disabled={!checkIn || !checkOut || availabilityStatus !== 'available' || loading}
-          className="w-full py-3 bg-primary text-white rounded-lg hover:bg-primary-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 font-semibold"
-        >
-          <CreditCard className="w-5 h-5" />
-          <span>{loading ? 'Traitement...' : 'Réserver'}</span>
-        </button>
+        {!isAuthenticated ? (
+          <Link
+            to={`/traveler-register?redirect=${encodeURIComponent(`/property/${property.id}`)}`}
+            className="w-full py-3 bg-primary text-white rounded-lg hover:bg-primary-light transition-colors flex items-center justify-center space-x-2 font-semibold"
+          >
+            <CreditCard className="w-5 h-5" />
+            <span>Créer un compte pour réserver</span>
+          </Link>
+        ) : (
+          <button
+            onClick={handleBooking}
+            disabled={!checkIn || !checkOut || availabilityStatus !== 'available' || loading}
+            className="w-full py-3 bg-primary text-white rounded-lg hover:bg-primary-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 font-semibold"
+          >
+            <CreditCard className="w-5 h-5" />
+            <span>{loading ? 'Traitement...' : 'Réserver'}</span>
+          </button>
+        )}
 
         <p className="text-xs text-center text-gray-500">
           Vous ne serez pas débité tant que l'hôte n'aura pas confirmé votre demande

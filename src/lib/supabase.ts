@@ -217,6 +217,7 @@ export type Database = {
           intervention_zones: string[]
           documents: string[]
           is_verified: boolean
+          is_active: boolean
           rating: number
           completed_jobs: number
           created_at: string
@@ -228,11 +229,12 @@ export type Database = {
           company?: string | null
           experience: string
           services: string[]
-          availability: Record<string, any>
+          availability?: Record<string, any>
           hourly_rate: number
-          intervention_zones: string[]
-          documents: string[]
+          intervention_zones?: string[]
+          documents?: string[]
           is_verified?: boolean
+          is_active?: boolean
           rating?: number
           completed_jobs?: number
           created_at?: string
@@ -249,6 +251,7 @@ export type Database = {
           intervention_zones?: string[]
           documents?: string[]
           is_verified?: boolean
+          is_active?: boolean
           rating?: number
           completed_jobs?: number
           updated_at?: string
@@ -278,6 +281,7 @@ export type Database = {
           mobile_city: string | null
           mobile_network: string | null
           is_verified: boolean
+          is_active: boolean
           created_at: string
           updated_at: string
         }
@@ -304,6 +308,7 @@ export type Database = {
           mobile_city?: string | null
           mobile_network?: string | null
           is_verified?: boolean
+          is_active?: boolean
           created_at?: string
           updated_at?: string
         }
@@ -330,6 +335,7 @@ export type Database = {
           mobile_city?: string | null
           mobile_network?: string | null
           is_verified?: boolean
+          is_active?: boolean
           updated_at?: string
         }
       }

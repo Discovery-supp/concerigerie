@@ -1,18 +1,90 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Menu, X, User, Calendar, Home, Users, Settings, Bell } from 'lucide-react';
 import Logo from '../../assets/logo.svg';
+import { supabase } from '../../lib/supabase';
+
+interface HeaderUser {
+  id: string;
+  firstName: string;
+  lastName?: string;
+  email?: string;
+  role?: string;
+}
 
 interface HeaderProps {
-  currentUser?: any;
+  currentUser?: HeaderUser;
   userType?: string;
 }
 
-const Header: React.FC<HeaderProps> = ({ currentUser, userType }) => {
+const Header: React.FC<HeaderProps> = ({ currentUser: propCurrentUser, userType: propUserType }) => {
   const location = useLocation();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [localUser, setLocalUser] = useState<HeaderUser | null>(null);
+  const [localUserType, setLocalUserType] = useState<string | null>(null);
   const isDashboardPage = location.pathname.includes('/dashboard');
+
+  // Toujours charger l'utilisateur depuis Supabase pour garantir qu'on a les bonnes infos
+  useEffect(() => {
+    const loadUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setLocalUser(null);
+        setLocalUserType(null);
+        return;
+      }
+
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('first_name,last_name,email,user_type')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      const firstName =
+        profile?.first_name ||
+        user.user_metadata?.firstName ||
+        user.user_metadata?.first_name ||
+        user.user_metadata?.given_name ||
+        'Utilisateur';
+
+      const lastName =
+        profile?.last_name ||
+        user.user_metadata?.lastName ||
+        user.user_metadata?.last_name ||
+        user.user_metadata?.family_name ||
+        '';
+
+      const role =
+        profile?.user_type ||
+        user.user_metadata?.userType ||
+        user.user_metadata?.user_type ||
+        'traveler';
+
+      setLocalUser({
+        id: user.id,
+        firstName,
+        lastName,
+        email: profile?.email || user.email || '',
+        role
+      });
+      setLocalUserType(role);
+    };
+
+    loadUser();
+
+    const { data: authSubscription } = supabase.auth.onAuthStateChange(() => {
+      loadUser();
+    });
+
+    return () => {
+      authSubscription?.subscription.unsubscribe();
+    };
+  }, [location.pathname]); // Recharger quand on change de page pour garantir les bonnes infos
+
+  // Utiliser l'utilisateur local (toujours à jour) ou celui passé en prop en fallback
+  const currentUser = localUser || propCurrentUser;
+  const userType = localUserType || propUserType;
 
   const getMenuItems = () => {
     if (!currentUser) return [];
@@ -63,15 +135,19 @@ const Header: React.FC<HeaderProps> = ({ currentUser, userType }) => {
               <Link to="/services" className="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors">
                 Nos Services
               </Link>
-              <Link to="/become-host" className="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors">
-                Devenir Hôte
-              </Link>
-              <Link to="/become-partner" className="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors">
-                Devenir Partenaire
-              </Link>
-              <Link to="/become-provider" className="text-secondary hover:text-primary px-3 py-2 rounded-md text-sm font-medium transition-colors">
-                Devenir Prestataire
-              </Link>
+              {!currentUser && (
+                <>
+                  <Link to="/become-host" className="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors">
+                    Devenir Hôte
+                  </Link>
+                  <Link to="/become-partner" className="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors">
+                    Devenir Partenaire
+                  </Link>
+                  <Link to="/become-provider" className="text-secondary hover:text-primary px-3 py-2 rounded-md text-sm font-medium transition-colors">
+                    Devenir Prestataire
+                  </Link>
+                </>
+              )}
             </nav>
           )}
 
@@ -109,22 +185,48 @@ const Header: React.FC<HeaderProps> = ({ currentUser, userType }) => {
                     <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center">
                       <User className="w-4 h-4 text-white" />
                     </div>
-                    <span className="hidden md:block text-sm font-medium">
-                      {currentUser.firstName}
+                    <span className="hidden md:flex flex-col text-left text-sm leading-tight">
+                      <span className="font-medium">{currentUser.firstName}</span>
+                      <span className="text-xs text-gray-500 capitalize">
+                        {currentUser.role || userType || 'utilisateur'}
+                      </span>
+                      <span className="text-[10px] text-gray-400 font-mono">
+                        ID: {currentUser.id}
+                      </span>
                     </span>
                   </button>
                   
                   {isUserMenuOpen && (
                     <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 border border-light-gray">
+                      <div className="px-4 py-2 border-b border-light-gray">
+                        <p className="text-sm font-semibold text-gray-900">
+                          {currentUser.firstName}{currentUser.lastName ? ` ${currentUser.lastName}` : ''}
+                        </p>
+                        <p className="text-xs text-gray-500 capitalize">
+                          {currentUser.role || userType || 'utilisateur'}
+                        </p>
+                        <p className="text-[11px] text-gray-400 break-all font-mono mt-1">
+                          ID: {currentUser.id}
+                        </p>
+                      </div>
+                      <Link to="/dashboard" className="block px-4 py-2 text-sm text-secondary hover:bg-gray-100">
+                        Tableau de bord
+                      </Link>
                       <Link to="/settings" className="block px-4 py-2 text-sm text-secondary hover:bg-gray-100">
                         Paramètres
                       </Link>
                       <Link to="/profile" className="block px-4 py-2 text-sm text-secondary hover:bg-gray-100">
                         Mon Profil
                       </Link>
-                      <Link to="/logout" className="block px-4 py-2 text-sm text-secondary hover:bg-gray-100">
+                      <button
+                        onClick={async () => {
+                          await supabase.auth.signOut();
+                          window.location.href = '/';
+                        }}
+                        className="block w-full text-left px-4 py-2 text-sm text-secondary hover:bg-gray-100"
+                      >
                         Déconnexion
-                      </Link>
+                      </button>
                     </div>
                   )}
                 </div>
@@ -170,15 +272,19 @@ const Header: React.FC<HeaderProps> = ({ currentUser, userType }) => {
             <Link to="/services" className="block px-3 py-2 text-secondary hover:text-primary hover:bg-gray-50 rounded-md">
               Nos Services
             </Link>
-            <Link to="/become-host" className="block px-3 py-2 text-secondary hover:text-primary hover:bg-gray-50 rounded-md">
-              Devenir Hôte
-            </Link>
-            <Link to="/become-partner" className="block px-3 py-2 text-secondary hover:text-primary hover:bg-gray-50 rounded-md">
-              Devenir Partenaire
-            </Link>
-            <Link to="/become-provider" className="block px-3 py-2 text-secondary hover:text-primary hover:bg-gray-50 rounded-md">
-              Devenir Prestataire
-            </Link>
+            {!currentUser && (
+              <>
+                <Link to="/become-host" className="block px-3 py-2 text-secondary hover:text-primary hover:bg-gray-50 rounded-md">
+                  Devenir Hôte
+                </Link>
+                <Link to="/become-partner" className="block px-3 py-2 text-secondary hover:text-primary hover:bg-gray-50 rounded-md">
+                  Devenir Partenaire
+                </Link>
+                <Link to="/become-provider" className="block px-3 py-2 text-secondary hover:text-primary hover:bg-gray-50 rounded-md">
+                  Devenir Prestataire
+                </Link>
+              </>
+            )}
             
             {currentUser && getMenuItems().map((item, index) => (
               <Link

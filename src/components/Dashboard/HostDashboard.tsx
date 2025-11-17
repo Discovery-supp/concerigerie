@@ -16,7 +16,8 @@ import {
   AlertCircle,
   BarChart3,
   Settings,
-  CreditCard
+  CreditCard,
+  Search
 } from 'lucide-react';
 
 interface Reservation {
@@ -609,6 +610,13 @@ const HostDashboard: React.FC = () => {
             icon={<BarChart3 className="w-6 h-6" />}
             color="orange"
             onClick={() => navigate('/analytics')}
+          />
+          <QuickActionCard
+            title="Rechercher prestataires"
+            description="Trouver des prestataires de services"
+            icon={<Search className="w-6 h-6" />}
+            onClick={() => navigate('/service-providers')}
+            color="purple"
           />
           <QuickActionCard
             title="Paramètres"

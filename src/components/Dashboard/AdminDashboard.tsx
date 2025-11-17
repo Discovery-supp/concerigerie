@@ -8,7 +8,8 @@ import PerformanceStats from './PerformanceStats';
 import PaymentReports from './PaymentReports';
 import FinancialReports from './FinancialReports';
 import CreateAdminAccount from './CreateAdminAccount';
-import { Users, Calendar, Home, DollarSign, Settings, BarChart3, FileText, Download, Edit, Trash2, Shield, UserPlus, MessageCircle } from 'lucide-react';
+import EditUserModal from '../Admin/EditUserModal';
+import { Users, Calendar, Home, DollarSign, Settings, BarChart3, FileText, Download, Edit, Trash2, Shield, UserPlus, MessageCircle, Power, PowerOff, X } from 'lucide-react';
 import MessagingSystem from '../Forms/MessagingSystem';
 
 interface AdminDashboardProps {
@@ -24,6 +25,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ userId }) => {
   const [currentUserType, setCurrentUserType] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [usersError, setUsersError] = useState<string | null>(null);
+  const [selectedUser, setSelectedUser] = useState<any | null>(null);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [stats, setStats] = useState({
     totalUsers: 0,
     totalHosts: 0,
@@ -31,6 +34,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ userId }) => {
     totalProperties: 0,
     totalReservations: 0,
     totalRevenue: 0,
+    additionalServicesRevenue: 0,
+    providerServicesRevenue: 0,
     occupancyRate: 0
   });
 
@@ -50,22 +55,76 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ userId }) => {
       setCurrentUserType(currentProfile?.user_type || null);
 
       // Charger tous les utilisateurs
-      const { data: usersData, error: usersError } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .order('created_at', { ascending: false });
+      // Essayer d'abord avec toutes les colonnes, puis avec des colonnes spécifiques si ça échoue
+      let usersData: any[] | null = null;
+      let usersError: any = null;
+
+      try {
+        console.log('[AdminDashboard] Tentative de chargement des utilisateurs avec SELECT *');
+        const result = await supabase
+          .from('user_profiles')
+          .select('*')
+          .order('created_at', { ascending: false });
+        
+        console.log('[AdminDashboard] Résultat SELECT *:', { data: result.data, error: result.error });
+        usersData = result.data;
+        usersError = result.error;
+      } catch (err: any) {
+        console.error('[AdminDashboard] Exception lors de SELECT *:', err);
+        // Si la requête échoue (peut-être à cause de la colonne is_active manquante), essayer sans
+        console.warn('Erreur avec SELECT *, tentative avec colonnes spécifiques:', err);
+        try {
+          console.log('[AdminDashboard] Tentative avec colonnes spécifiques (sans email)');
+          // Essayer sans email (qui n'existe pas dans user_profiles)
+          const result = await supabase
+            .from('user_profiles')
+            .select('id, first_name, last_name, phone, user_type, created_at, updated_at')
+            .order('created_at', { ascending: false });
+          
+          console.log('[AdminDashboard] Résultat colonnes spécifiques:', { data: result.data, error: result.error });
+          usersData = result.data;
+          usersError = result.error;
+          
+          // Si ça fonctionne, enrichir avec les emails depuis auth.users
+          if (usersData && !usersError && usersData.length > 0) {
+            const userIds = usersData.map(u => u.id);
+            // Note: On ne peut pas directement accéder à auth.users depuis le client
+            // Il faudrait une fonction Edge ou une vue, mais pour l'instant on continue sans email
+            usersData = usersData.map((user: any) => ({
+              ...user,
+              email: 'N/A' // Email non disponible depuis user_profiles
+            }));
+          }
+        } catch (err2: any) {
+          usersError = err2;
+        }
+      }
 
       if (usersError) {
-        console.error('Erreur chargement utilisateurs:', usersError);
-        console.error('Détails erreur:', {
+        console.error('[AdminDashboard] Erreur chargement utilisateurs:', usersError);
+        console.error('[AdminDashboard] Détails erreur:', {
           message: usersError.message,
           code: usersError.code,
           details: usersError.details,
           hint: usersError.hint
         });
-        setUsersError(`Erreur: ${usersError.message} (Code: ${usersError.code || 'N/A'})`);
+        
+        // Vérifier si c'est une erreur RLS
+        if (usersError.message?.includes('policy') || usersError.message?.includes('permission') || usersError.code === '42501') {
+          setUsersError(`Erreur de permissions: ${usersError.message}. Assurez-vous que la migration RLS a été exécutée et que vous êtes connecté en tant qu'admin.`);
+        } else {
+          setUsersError(`Erreur: ${usersError.message} (Code: ${usersError.code || 'N/A'})`);
+        }
       } else {
-        console.log('Utilisateurs chargés:', usersData?.length || 0, usersData);
+        // S'assurer que is_active existe pour chaque utilisateur (par défaut true si absent)
+        // Et s'assurer que email existe (même si c'est 'N/A')
+        const usersWithActive = (usersData || []).map((user: any) => ({
+          ...user,
+          is_active: user.is_active !== undefined && user.is_active !== null ? user.is_active : true,
+          email: user.email || 'N/A'
+        }));
+        console.log('[AdminDashboard] Utilisateurs chargés avec succès:', usersWithActive?.length || 0, usersWithActive);
+        setUsers(usersWithActive);
         setUsersError(null);
       }
 
@@ -86,6 +145,33 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ userId }) => {
 
       // Calculer les statistiques
       const totalRevenue = reservationsData?.reduce((sum, r) => sum + Number(r.total_amount || 0), 0) || 0;
+      
+      // Calculer les revenus des services supplémentaires
+      const additionalServicesRevenue = reservationsData?.reduce((sum, r) => {
+        if (r.additional_services && Array.isArray(r.additional_services)) {
+          const servicesTotal = r.additional_services.reduce((serviceSum: number, service: any) => {
+            if (typeof service === 'object' && service.totalPrice) {
+              return serviceSum + Number(service.totalPrice || 0);
+            }
+            return serviceSum;
+          }, 0);
+          return sum + servicesTotal;
+        }
+        return sum;
+      }, 0) || 0;
+
+      // Calculer les revenus des prestataires (à partir des réservations de services de prestataires)
+      // Note: Cette logique dépend de votre structure de données pour les services de prestataires
+      // Pour l'instant, on peut utiliser une table séparée ou un champ dans les réservations
+      const { data: providerBookings } = await supabase
+        .from('service_bookings')
+        .select('total_amount, status')
+        .in('status', ['confirmed', 'completed'])
+        .catch(() => ({ data: null })); // Si la table n'existe pas, ignorer
+
+      const providerServicesRevenue = providerBookings?.reduce((sum: number, booking: any) => 
+        sum + Number(booking.total_amount || 0), 0) || 0;
+
       const confirmedReservations = reservationsData?.filter(r => r.status === 'confirmed').length || 0;
       const occupancyRate = propertiesData?.length 
         ? (confirmedReservations / propertiesData.length) * 100 
@@ -98,10 +184,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ userId }) => {
         totalProperties: propertiesData?.length || 0,
         totalReservations: reservationsData?.length || 0,
         totalRevenue,
+        additionalServicesRevenue,
+        providerServicesRevenue,
         occupancyRate
       });
 
-      setUsers(usersData || []);
+      // Les utilisateurs sont déjà définis dans le bloc précédent
       setReservations(reservationsData || []);
     } catch (error) {
       console.error('Erreur chargement données:', error);
@@ -123,6 +211,74 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ userId }) => {
       loadData();
     } catch (error) {
       console.error('Erreur suppression utilisateur:', error);
+    }
+  };
+
+  const handleToggleUserActive = async (userId: string, currentStatus: boolean) => {
+    try {
+      const { error } = await supabase
+        .from('user_profiles')
+        .update({ is_active: !currentStatus })
+        .eq('id', userId);
+
+      if (error) {
+        // Si l'erreur indique que la colonne n'existe pas, informer l'utilisateur
+        if (error.message?.includes('column') && error.message?.includes('does not exist')) {
+          alert('La fonctionnalité d\'activation/désactivation nécessite l\'exécution de la migration de base de données. Veuillez exécuter la migration: 20250122000000_add_is_active_to_users_and_providers.sql');
+        } else {
+          throw error;
+        }
+        return;
+      }
+      loadData();
+    } catch (error: any) {
+      console.error('Erreur activation/désactivation utilisateur:', error);
+      alert('Erreur lors de la modification du statut: ' + (error.message || 'Erreur inconnue'));
+    }
+  };
+
+  const handleToggleProviderActive = async (providerId: string, userId: string, currentStatus: boolean) => {
+    try {
+      // Mettre à jour le prestataire
+      const { error: providerError } = await supabase
+        .from('service_providers')
+        .update({ is_active: !currentStatus })
+        .eq('id', providerId);
+
+      if (providerError) throw providerError;
+
+      // Mettre à jour aussi le profil utilisateur si nécessaire
+      const { error: userError } = await supabase
+        .from('user_profiles')
+        .update({ is_active: !currentStatus })
+        .eq('id', userId);
+
+      if (userError) throw userError;
+      loadData();
+    } catch (error) {
+      console.error('Erreur activation/désactivation prestataire:', error);
+      alert('Erreur lors de la modification du statut');
+    }
+  };
+
+  const handleCancelReservation = async (reservationId: string) => {
+    if (!confirm('Êtes-vous sûr de vouloir annuler cette réservation ?')) return;
+    
+    try {
+      const { error } = await supabase
+        .from('reservations')
+        .update({ 
+          status: 'cancelled',
+          payment_status: 'refunded'
+        })
+        .eq('id', reservationId);
+
+      if (error) throw error;
+      loadData();
+      alert('Réservation annulée avec succès');
+    } catch (error: any) {
+      console.error('Erreur annulation réservation:', error);
+      alert('Erreur: ' + error.message);
     }
   };
 
@@ -190,7 +346,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ userId }) => {
       {/* Vue d'ensemble */}
       {activeTab === 'overview' && (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             <StatCard
               icon={<Users className="w-8 h-8 text-blue-600" />}
               title="Utilisateurs totaux"
@@ -214,6 +370,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ userId }) => {
               title="Revenus totaux"
               value={`${stats.totalRevenue.toFixed(2)} €`}
               bgColor="bg-purple-50"
+            />
+            <StatCard
+              icon={<DollarSign className="w-8 h-8 text-orange-600" />}
+              title="Revenus services supplémentaires"
+              value={`${stats.additionalServicesRevenue.toFixed(2)} €`}
+              bgColor="bg-orange-50"
+            />
+            <StatCard
+              icon={<DollarSign className="w-8 h-8 text-indigo-600" />}
+              title="Revenus prestataires"
+              value={`${stats.providerServicesRevenue.toFixed(2)} €`}
+              bgColor="bg-indigo-50"
             />
           </div>
 
@@ -412,6 +580,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ userId }) => {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Nom</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Téléphone</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Statut</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date création</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                 </tr>
@@ -435,7 +604,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ userId }) => {
                 ) : (
                   users.map(user => (
                     <tr key={user.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{user.email}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{user.email || 'N/A'}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {user.first_name} {user.last_name}
                       </td>
@@ -457,17 +626,34 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ userId }) => {
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {user.phone || '—'}
                       </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                          user.is_active !== false ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                        }`}>
+                          {user.is_active !== false ? 'Actif' : 'Inactif'}
+                        </span>
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {user.created_at ? new Date(user.created_at).toLocaleDateString('fr-FR') : '—'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <div className="flex space-x-2">
                           <button
-                            onClick={() => {/* Modifier */}}
+                            onClick={() => {
+                              setSelectedUser(user);
+                              setShowEditModal(true);
+                            }}
                             className="text-blue-600 hover:text-blue-900"
                             title="Modifier"
                           >
                             <Edit className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleToggleUserActive(user.id, user.is_active !== false)}
+                            className={user.is_active !== false ? "text-orange-600 hover:text-orange-900" : "text-green-600 hover:text-green-900"}
+                            title={user.is_active !== false ? "Désactiver" : "Activer"}
+                          >
+                            {user.is_active !== false ? <PowerOff className="w-4 h-4" /> : <Power className="w-4 h-4" />}
                           </button>
                           <button
                             onClick={() => handleDeleteUser(user.id)}
@@ -575,11 +761,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ userId }) => {
             </div>
           )}
           
-          <ReservationsList
-            reservations={reservations}
-            userType="admin"
-            title="Toutes les réservations"
-          />
+          <div className="bg-white rounded-xl shadow-md p-6">
+            <ReservationsList
+              reservations={reservations}
+              userType="admin"
+              title="Toutes les réservations"
+              onCancel={handleCancelReservation}
+            />
+          </div>
         </div>
       )}
 
@@ -638,6 +827,19 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ userId }) => {
           </div>
         </div>
       )}
+
+      {/* Modal de modification d'utilisateur */}
+      <EditUserModal
+        isOpen={showEditModal}
+        onClose={() => {
+          setShowEditModal(false);
+          setSelectedUser(null);
+        }}
+        onUserUpdated={() => {
+          loadData();
+        }}
+        user={selectedUser}
+      />
     </div>
   );
 };

@@ -30,17 +30,48 @@ export const reservationsService = {
   // Récupérer les réservations d'un utilisateur
   async getUserReservations(userId: string) {
     try {
-      const { data, error } = await supabase
+      // Charger les réservations sans jointures (plus fiable)
+      const { data: reservations, error } = await supabase
         .from('reservations')
-        .select(`
-          *,
-          property:properties(*)
-        `)
+        .select('*')
         .eq('guest_id', userId)
         .order('created_at', { ascending: false })
 
-      if (error) throw error
-      return data
+      if (error) {
+        console.error('Erreur récupération réservations:', error)
+        throw error
+      }
+
+      if (!reservations || reservations.length === 0) {
+        console.log('[getUserReservations] Aucune réservation trouvée pour userId:', userId)
+        return []
+      }
+
+      // Charger les propriétés séparément
+      const propertyIds = [...new Set(reservations.map(r => r.property_id).filter(Boolean))]
+      
+      let propertiesMap = new Map()
+      if (propertyIds.length > 0) {
+        const { data: properties, error: propertiesError } = await supabase
+          .from('properties')
+          .select('*')
+          .in('id', propertyIds)
+
+        if (propertiesError) {
+          console.warn('Erreur chargement propriétés:', propertiesError)
+        } else if (properties) {
+          propertiesMap = new Map(properties.map(p => [p.id, p]))
+        }
+      }
+
+      // Combiner les réservations avec leurs propriétés
+      const reservationsWithProperties = reservations.map(reservation => ({
+        ...reservation,
+        property: propertiesMap.get(reservation.property_id) || null
+      }))
+
+      console.log('[getUserReservations] Réservations chargées:', reservationsWithProperties.length)
+      return reservationsWithProperties
     } catch (error) {
       console.error('Erreur récupération réservations utilisateur:', error)
       throw error
@@ -109,18 +140,39 @@ export const reservationsService = {
   // Demander l'annulation d'une réservation (pour les guests - notification à l'admin)
   async requestCancellation(reservationId: string, reason?: string) {
     try {
-      // Récupérer les informations de la réservation
+      // Récupérer les informations de la réservation sans jointures
       const { data: reservation, error: resError } = await supabase
         .from('reservations')
-        .select(`
-          *,
-          property:properties(*),
-          guest:user_profiles(*)
-        `)
+        .select('*')
         .eq('id', reservationId)
         .single()
 
       if (resError) throw resError
+
+      // Charger la propriété et le guest séparément
+      let property = null;
+      let guest = null;
+      
+      if (reservation.property_id) {
+        const { data: propData } = await supabase
+          .from('properties')
+          .select('*')
+          .eq('id', reservation.property_id)
+          .maybeSingle();
+        property = propData;
+      }
+
+      if (reservation.guest_id) {
+        const { data: guestData } = await supabase
+          .from('user_profiles')
+          .select('*')
+          .eq('id', reservation.guest_id)
+          .maybeSingle();
+        guest = guestData;
+      }
+
+      // Ajouter les données chargées à la réservation
+      const reservationWithData = { ...reservation, property, guest }
 
       // Trouver tous les admins
       const { data: admins, error: adminError } = await supabase
@@ -139,10 +191,10 @@ export const reservationsService = {
           message: `Un voyageur demande l'annulation de sa réservation #${reservationId.substring(0, 8)}.${reason ? ` Raison: ${reason}` : ''}`,
           data: {
             reservation_id: reservationId,
-            property_id: reservation.property_id,
-            guest_id: reservation.guest_id,
+            property_id: reservationWithData.property_id,
+            guest_id: reservationWithData.guest_id,
             reason: reason || null,
-            reservation: reservation
+            reservation: reservationWithData
           },
           is_read: false
         }))

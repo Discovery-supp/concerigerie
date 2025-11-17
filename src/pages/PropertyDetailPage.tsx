@@ -72,23 +72,58 @@ const PropertyDetailPage: React.FC = () => {
         imagesArray = ['https://images.pexels.com/photos/1571460/pexels-photo-1571460.jpeg'];
       }
 
-      // Charger les avis
-      const { data: reviewsData } = await supabase
+      // Charger les avis sans jointures (plus fiable)
+      const { data: reviewsData, error: reviewsError } = await supabase
         .from('reviews')
-        .select('*, reviewer:user_profiles!reviews_reviewer_id_fkey(first_name, last_name)')
+        .select('*')
         .eq('property_id', id)
         .order('created_at', { ascending: false });
 
+      // Si erreur, continuer sans reviews
+      if (reviewsError) {
+        console.warn('Erreur chargement reviews:', reviewsError);
+      }
+
+      // Charger les infos des reviewers séparément si nécessaire
+      let reviewsWithReviewers = reviewsData || [];
+      if (reviewsWithReviewers.length > 0) {
+        try {
+          const reviewerIds = [...new Set(reviewsWithReviewers.map((r: any) => r.reviewer_id).filter(Boolean))];
+          if (reviewerIds.length > 0) {
+            const { data: reviewersData } = await supabase
+              .from('user_profiles')
+              .select('id, first_name, last_name')
+              .in('id', reviewerIds);
+
+            if (reviewersData) {
+              const reviewersMap = new Map(reviewersData.map(r => [r.id, r]));
+              reviewsWithReviewers = reviewsWithReviewers.map((review: any) => ({
+                ...review,
+                reviewer: reviewersMap.get(review.reviewer_id) || null
+              }));
+            }
+          }
+        } catch (reviewerError) {
+          console.warn('Erreur chargement reviewers:', reviewerError);
+        }
+      }
+
       // Charger les informations de l'hôte (année d'inscription)
       if (data.owner_id) {
-        const { data: hostData } = await supabase
-          .from('user_profiles')
-          .select('id, first_name, last_name, created_at')
-          .eq('id', data.owner_id)
-          .single();
-        
-        if (hostData) {
-          setHostInfo(hostData);
+        try {
+          const { data: hostData, error: hostError } = await supabase
+            .from('user_profiles')
+            .select('id, first_name, last_name, created_at')
+            .eq('id', data.owner_id)
+            .maybeSingle();
+          
+          if (hostError) {
+            console.warn('Erreur chargement hôte:', hostError);
+          } else if (hostData) {
+            setHostInfo(hostData);
+          }
+        } catch (hostError) {
+          console.warn('Erreur chargement informations hôte:', hostError);
         }
       }
 
@@ -138,7 +173,7 @@ const PropertyDetailPage: React.FC = () => {
               : [])
       });
       
-      setReviews(reviewsData || []);
+      setReviews(reviewsWithReviewers);
     } catch (error: any) {
       console.error('Erreur chargement propriété:', error);
       console.error('Erreur détaillée:', {
@@ -262,8 +297,8 @@ const PropertyDetailPage: React.FC = () => {
                   alt={`Image ${currentImageIndex + 1}`}
                   className="w-full h-full object-cover"
                   loading="lazy"
-                  onError={(e) => {
-                    e.currentTarget.src = 'https://images.pexels.com/photos/1571460/pexels-photo-1571460.jpeg';
+                  onError={() => {
+                    // Image de fallback gérée par le composant OptimizedImage
                   }}
                 />
                 

@@ -57,6 +57,7 @@ export const serviceProvidersService = {
           users!service_providers_user_id_fkey(first_name, last_name, phone, email)
         `)
         .eq('is_verified', true)
+        .eq('is_active', true)
 
       if (filters?.services && filters.services.length > 0) {
         query = query.overlaps('services', filters.services)
@@ -108,6 +109,7 @@ export const serviceProvidersService = {
           users!service_providers_user_id_fkey(first_name, last_name, phone)
         `)
         .eq('is_verified', true)
+        .eq('is_active', true)
         .or(`services.cs.{${searchTerm}},users.first_name.ilike.%${searchTerm}%,users.last_name.ilike.%${searchTerm}%`)
 
       if (error) throw error

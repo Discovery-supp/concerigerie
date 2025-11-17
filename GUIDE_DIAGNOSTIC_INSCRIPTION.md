@@ -188,3 +188,5 @@ Si après toutes ces étapes le problème persiste :
 **Solution :** Vérifiez les logs Supabase Database pour voir l'erreur SQL exacte
 
 
+
+

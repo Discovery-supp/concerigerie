@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Search, Filter, MapPin, Star, Users, Bed, Bath, Wifi, Car, School as Pool, ChevronDown, ArrowLeft } from 'lucide-react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useEffect } from 'react';
 import propertiesService from '../services/properties';
 import reviewsService from '../services/reviews';
@@ -234,11 +234,6 @@ const PropertiesPage: React.FC = () => {
     );
   };
 
-  const handlePropertyClick = (propertyId: string) => {
-    // Conserver le paramètre from=dashboard si présent
-    const fromParam = isFromDashboard ? '?from=dashboard' : '';
-    navigate(`/property/${propertyId}${fromParam}`);
-  };
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
@@ -471,108 +466,90 @@ const PropertiesPage: React.FC = () => {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {filteredProperties.map((property) => (
-            <div
-              key={property.id}
-              className="bg-white rounded-2xl shadow-lg overflow-hidden hover:shadow-xl transition-all duration-300 group cursor-pointer"
-              onClick={() => handlePropertyClick(property.id)}
-            >
-              {/* Image */}
-              <div className="relative h-64 overflow-hidden">
-                <OptimizedImage
-                  src={property.image || 'https://images.pexels.com/photos/1571460/pexels-photo-1571460.jpeg'}
-                  alt={property.title}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                  loading="lazy"
-                />
-                <div className="absolute top-4 right-4 bg-white px-3 py-1 rounded-full shadow-md">
-                  <span className="text-sm font-semibold text-primary">
+            {filteredProperties.map((property) => {
+              const propertyUrl = isFromDashboard 
+                ? `/property/${property.id}?from=dashboard`
+                : `/property/${property.id}`;
+              
+              return (
+              <Link
+                key={property.id}
+                to={propertyUrl}
+                className="group bg-white rounded-2xl shadow-lg overflow-hidden hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-2"
+              >
+                {/* Image */}
+                <div className="relative h-64 overflow-hidden bg-gray-200">
+                  <OptimizedImage
+                    src={property.image || 'https://images.pexels.com/photos/1571460/pexels-photo-1571460.jpeg'}
+                    alt={property.title}
+                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                    loading="lazy"
+                  />
+                  {/* Rating badge */}
+                  <div className="absolute top-4 right-4 bg-white px-3 py-1 rounded-full shadow-lg">
+                    <div className="flex items-center space-x-1">
+                      <Star className="w-4 h-4 text-yellow-400 fill-current" />
+                      <span className="text-sm font-semibold text-gray-900">
+                        {property.rating ? property.rating.toFixed(1) : '0.0'}
+                      </span>
+                    </div>
+                  </div>
+                  {/* Price badge */}
+                  <div className="absolute bottom-4 left-4 bg-blue-600 text-white px-4 py-2 rounded-lg font-bold shadow-lg">
                     ${property.price_per_night}/nuit
-                  </span>
-                </div>
-              </div>
-
-              {/* Catégorie et quartier */}
-              <div className="px-6 pb-2">
-                <div className="flex items-center justify-between">
-                  <span className="px-2 py-1 bg-primary bg-opacity-10 text-primary text-xs font-medium rounded-full">
-                    {property.category}
-                  </span>
-                  <span className="text-xs text-secondary">
-                    {property.neighborhood || 'Kinshasa'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Contenu */}
-              <div className="p-6">
-                {/* Titre et localisation */}
-                <div className="mb-4">
-                  <h3 className="text-lg font-semibold font-heading text-primary mb-2 line-clamp-2">
-                    {property.title}
-                  </h3>
-                  <div className="flex items-center text-secondary text-sm">
-                    <MapPin className="w-4 h-4 mr-1" />
-                    <span>{property.address || property.location}</span>
                   </div>
                 </div>
 
-                {/* Note et avis */}
-                <div className="flex items-center mb-4">
-                  <div className="flex items-center">
-                    <Star className="w-4 h-4 text-yellow-400 fill-current" />
-                    <span className="ml-1 text-sm font-medium text-primary">
-                      {property.rating ? property.rating.toFixed(1) : '0.0'}
-                    </span>
+                {/* Contenu */}
+                <div className="p-6">
+                  {/* Titre */}
+                  <div className="flex items-start justify-between mb-3">
+                    <h3 className="text-xl font-bold text-gray-900 group-hover:text-blue-600 transition-colors line-clamp-1">
+                      {property.title}
+                    </h3>
                   </div>
-                  <span className="ml-2 text-sm text-secondary">
-                    ({property.reviewsCount || 0} avis)
-                  </span>
-                </div>
 
-                {/* Détails */}
-                <div className="flex items-center justify-between mb-4 text-sm text-secondary">
-                  <div className="flex items-center space-x-4">
-                    <div className="flex items-center">
-                      <Users className="w-4 h-4 mr-1" />
-                      <span>{property.max_guests}</span>
-                    </div>
-                    <div className="flex items-center">
-                      <Bed className="w-4 h-4 mr-1" />
-                      <span>{property.bedrooms}</span>
-                    </div>
-                    <div className="flex items-center">
-                      <Bath className="w-4 h-4 mr-1" />
-                      <span>{property.bathrooms}</span>
-                    </div>
+                  {/* Localisation */}
+                  <div className="flex items-center text-gray-600 mb-4">
+                    <MapPin className="w-4 h-4 mr-2 flex-shrink-0" />
+                    <span className="text-sm line-clamp-1">{property.neighborhood || property.address || property.location || 'Kinshasa'}</span>
                   </div>
-                </div>
 
-                {/* Équipements */}
-                <div className="flex items-center space-x-2 mb-4">
-                  {(property.amenities || []).slice(0, 3).map((amenity, index) => {
-                    const IconComponent = amenityIcons[amenity as keyof typeof amenityIcons];
-                    return IconComponent ? (
-                      <div key={index} className="p-2 bg-gray-100 rounded-lg">
-                        <IconComponent className="w-4 h-4 text-primary" />
+                  {/* Description */}
+                  {property.description && (
+                    <p className="text-gray-600 mb-4 line-clamp-2 text-sm leading-relaxed">
+                      {property.description}
+                    </p>
+                  )}
+
+                  {/* Détails (guests, bedrooms, bathrooms) */}
+                  <div className="flex items-center justify-between pt-4 border-t border-gray-200">
+                    <div className="flex items-center space-x-4 text-sm text-gray-600">
+                      <div className="flex items-center">
+                        <Users className="w-4 h-4 mr-1" />
+                        <span>{property.max_guests || 0}</span>
                       </div>
-                    ) : null;
-                  })}
-                </div>
+                      <div className="flex items-center">
+                        <Bed className="w-4 h-4 mr-1" />
+                        <span>{property.bedrooms || 0}</span>
+                      </div>
+                      <div className="flex items-center">
+                        <Bath className="w-4 h-4 mr-1" />
+                        <span>{property.bathrooms || 0}</span>
+                      </div>
+                    </div>
+                  </div>
 
-                {/* Bouton de réservation */}
-                <button 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handlePropertyClick(property.id);
-                  }}
-                  className="w-full py-3 bg-primary text-white font-semibold rounded-lg hover:bg-primary-light transition-colors"
-                >
-                  Voir les détails
-                </button>
-              </div>
-            </div>
-            ))}
+                  {/* Avis count */}
+                  {property.reviewsCount > 0 && (
+                    <div className="mt-3 text-sm text-gray-500">
+                      ({property.reviewsCount} avis)
+                    </div>
+                  )}
+                </div>
+              </Link>
+              );
+            })}
           </div>
         )}
 

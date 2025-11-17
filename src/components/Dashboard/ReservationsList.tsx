@@ -19,7 +19,7 @@ interface Reservation {
   check_in: string;
   check_out: string;
   total_amount: number;
-  status: 'pending' | 'confirmed' | 'cancelled' | 'completed';
+  status: 'pending' | 'confirmed' | 'cancelled' | 'completed' | 'pending_cancellation';
   payment_status: 'pending' | 'paid' | 'refunded';
   adults: number;
   children: number;
@@ -32,6 +32,7 @@ interface ReservationsListProps {
   title?: string;
   showFilters?: boolean;
   onStatusChange?: (id: string, status: string) => void;
+  onCancel?: (id: string) => void;
 }
 
 const ReservationsList: React.FC<ReservationsListProps> = ({
@@ -39,9 +40,10 @@ const ReservationsList: React.FC<ReservationsListProps> = ({
   userType,
   title = 'Réservations',
   showFilters = true,
-  onStatusChange
+  onStatusChange,
+  onCancel
 }) => {
-  const [filter, setFilter] = useState<'all' | 'pending' | 'confirmed' | 'completed' | 'cancelled'>('all');
+  const [filter, setFilter] = useState<'all' | 'pending' | 'confirmed' | 'completed' | 'cancelled' | 'pending_cancellation'>('all');
 
   const filteredReservations = filter === 'all'
     ? reservations
@@ -52,7 +54,8 @@ const ReservationsList: React.FC<ReservationsListProps> = ({
     pending: reservations.filter(r => r.status === 'pending').length,
     confirmed: reservations.filter(r => r.status === 'confirmed').length,
     completed: reservations.filter(r => r.status === 'completed').length,
-    cancelled: reservations.filter(r => r.status === 'cancelled').length
+    cancelled: reservations.filter(r => r.status === 'cancelled').length,
+    pending_cancellation: reservations.filter(r => r.status === 'pending_cancellation').length
   };
 
   return (
@@ -66,6 +69,7 @@ const ReservationsList: React.FC<ReservationsListProps> = ({
               { value: 'pending', label: 'En attente', count: stats.pending },
               { value: 'confirmed', label: 'Confirmées', count: stats.confirmed },
               { value: 'completed', label: 'Terminées', count: stats.completed },
+              { value: 'pending_cancellation', label: 'Annulation demandée', count: stats.pending_cancellation },
               { value: 'cancelled', label: 'Annulées', count: stats.cancelled }
             ].map(f => (
               <button
@@ -97,6 +101,7 @@ const ReservationsList: React.FC<ReservationsListProps> = ({
               reservation={reservation}
               userType={userType}
               onStatusChange={onStatusChange}
+              onCancel={onCancel}
             />
           ))}
         </div>

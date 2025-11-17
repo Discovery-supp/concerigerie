@@ -80,26 +80,51 @@ const MyReservationsPage: React.FC = () => {
   const loadReservations = async () => {
     try {
       setLoading(true);
-      // Vérification rapide des variables d'environnement Supabase et session
-      // (aide au diagnostic sans impacter l'UI)
-      // eslint-disable-next-line no-console
-      console.log('[MyReservations] SUPABASE_URL:', (import.meta as any)?.env?.VITE_SUPABASE_URL || (window as any)?.SUPABASE_URL || 'not-set');
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-      if (!user) {
+      if (authError) {
+        console.error('[MyReservations] Erreur authentification:', authError);
         navigate('/login');
         return;
       }
 
-      // eslint-disable-next-line no-console
-      console.log('[MyReservations] guest_id:', user.id);
+      if (!user) {
+        console.warn('[MyReservations] Aucun utilisateur connecté');
+        navigate('/login');
+        return;
+      }
+
+      console.log('[MyReservations] Utilisateur connecté:', user.id, user.email);
+
+      // Vérifier directement dans la base de données
+      const { data: directCheck, error: directError } = await supabase
+        .from('reservations')
+        .select('id, guest_id, property_id, status, created_at')
+        .eq('guest_id', user.id)
+        .limit(5);
+
+      console.log('[MyReservations] Vérification directe:', {
+        count: directCheck?.length || 0,
+        error: directError,
+        sample: directCheck?.[0]
+      });
 
       const data = await reservationsService.getUserReservations(user.id);
-      // eslint-disable-next-line no-console
-      console.log('[MyReservations] reservations loaded:', Array.isArray(data) ? data.length : 0, data);
-      setReservations(data);
-    } catch (error) {
-      console.error('Erreur chargement réservations:', error);
+      console.log('[MyReservations] Réservations chargées:', {
+        count: Array.isArray(data) ? data.length : 0,
+        data: data,
+        firstReservation: Array.isArray(data) && data.length > 0 ? data[0] : null
+      });
+      
+      setReservations(Array.isArray(data) ? data : []);
+    } catch (error: any) {
+      console.error('[MyReservations] Erreur chargement réservations:', {
+        message: error.message,
+        code: error.code,
+        details: error,
+        stack: error.stack
+      });
+      setReservations([]); // S'assurer que l'état est vide en cas d'erreur
     } finally {
       setLoading(false);
     }

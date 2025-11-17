@@ -62,3 +62,5 @@ Le code côté application a été amélioré pour :
 - Ne jamais bloquer la création de compte même si le profil échoue
 
 
+
+

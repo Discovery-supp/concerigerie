@@ -7,6 +7,11 @@ export const authService = {
     lastName: string
     phone: string
     userType: string
+    dateOfBirth?: string
+    country?: string
+    city?: string
+    address?: string
+    postalCode?: string
   }) {
     if (!isSupabaseConfigured) {
       throw new Error('Supabase n\'est pas configuré. Veuillez configurer les variables d\'environnement.')
@@ -64,6 +69,22 @@ export const authService = {
           }
         }
 
+        // Mettre à jour le profil avec les informations supplémentaires si fournies
+        const profileUpdateData: any = {
+          first_name: userData.firstName || 'Utilisateur',
+          last_name: userData.lastName || '',
+          phone: userData.phone || null,
+          user_type: userData.userType || 'traveler',
+          updated_at: new Date().toISOString()
+        };
+
+        // Ajouter les champs optionnels s'ils sont fournis
+        if (userData.dateOfBirth) profileUpdateData.date_of_birth = userData.dateOfBirth;
+        if (userData.country) profileUpdateData.country = userData.country;
+        if (userData.city) profileUpdateData.city = userData.city;
+        if (userData.address) profileUpdateData.address = userData.address;
+        if (userData.postalCode) profileUpdateData.postal_code = userData.postalCode;
+
         // Si le trigger n'a pas créé le profil, le créer manuellement
         if (!profileData) {
           console.log('Trigger n\'a pas créé le profil, création manuelle...')
@@ -72,12 +93,8 @@ export const authService = {
             .upsert({
               id: authData.user.id,
               email: authData.user.email || email,
-              first_name: userData.firstName || 'Utilisateur',
-              last_name: userData.lastName || '',
-              phone: userData.phone || null,
-              user_type: userData.userType || 'traveler',
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString()
+              ...profileUpdateData,
+              created_at: new Date().toISOString()
             })
             .select()
             .maybeSingle()
@@ -88,6 +105,18 @@ export const authService = {
             return { user: authData.user, profile: null }
           }
           profileData = upserted as any
+        } else {
+          // Mettre à jour le profil existant avec les informations supplémentaires
+          const { data: updated, error: updateError } = await supabase
+            .from('user_profiles')
+            .update(profileUpdateData)
+            .eq('id', authData.user.id)
+            .select()
+            .maybeSingle();
+
+          if (!updateError && updated) {
+            profileData = updated;
+          }
         }
 
         return { user: authData.user, profile: profileData }

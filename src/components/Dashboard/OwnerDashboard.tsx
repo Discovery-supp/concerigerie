@@ -57,22 +57,34 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ userId }) => {
       // si la propriété n'est plus accessible
       let reservationsData: any[] = [];
       
+      // Charger les réservations sans jointures
       const { data: allReservations, error: resError } = await supabase
         .from('reservations')
-        .select(`
-          *,
-          property:properties(id, title, address, images, owner_id)
-        `)
+        .select('*')
+        .in('property_id', propertyIds)
         .order('check_in', { ascending: false });
 
       if (resError) {
         console.error('Erreur chargement réservations:', resError);
-        // Ne pas throw, continuer avec un tableau vide
+        reservationsData = [];
       } else {
-        // Filtrer côté client pour ne garder que les réservations des propriétés de l'utilisateur
-        reservationsData = (allReservations || []).filter((res: any) => {
-          return res.property && res.property.owner_id === userId;
-        });
+        reservationsData = allReservations || [];
+        
+        // Charger les propriétés séparément
+        if (reservationsData.length > 0) {
+          const { data: propertiesData } = await supabase
+            .from('properties')
+            .select('id, title, address, images, owner_id')
+            .in('id', propertyIds);
+
+          if (propertiesData) {
+            const propertiesMap = new Map(propertiesData.map(p => [p.id, p]));
+            reservationsData = reservationsData.map((res: any) => ({
+              ...res,
+              property: propertiesMap.get(res.property_id) || null
+            }));
+          }
+        }
         
         console.log('Réservations chargées:', reservationsData?.length || 0, 'pour', propertyIds.length, 'propriétés');
       }
@@ -98,14 +110,10 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ userId }) => {
         }
       }
 
-      // Charger les avis
+      // Charger les avis sans jointures
       const { data: reviewsData } = await supabase
         .from('reviews')
-        .select(`
-          *,
-          property:properties(id, title),
-          guest:user_profiles!reviews_guest_id_fkey(id, first_name, last_name)
-        `)
+        .select('*')
         .in('property_id', propertyIds)
         .order('created_at', { ascending: false })
         .limit(10);
@@ -157,32 +165,58 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ userId }) => {
 
   const loadNotifications = async () => {
     try {
+      // Récupérer les IDs des propriétés de l'utilisateur
+      const { data: userProperties } = await supabase
+        .from('properties')
+        .select('id')
+        .eq('owner_id', userId);
+
+      const propertyIds = userProperties?.map(p => p.id) || [];
+      if (propertyIds.length === 0) {
+        setNotifications([]);
+        return;
+      }
+
       // Charger les notifications (nouvelles réservations, rappels check-in/check-out)
       const today = new Date();
       const tomorrow = new Date(today);
       tomorrow.setDate(tomorrow.getDate() + 1);
 
-      const { data: upcomingCheckIns } = await supabase
+      // Charger les réservations sans jointures, filtrer par property_id
+      const { data: allReservations } = await supabase
         .from('reservations')
-        .select('*, property:properties!inner(owner_id, title)')
-        .eq('property.owner_id', userId)
-        .eq('status', 'confirmed')
-        .gte('check_in', today.toISOString().split('T')[0])
-        .lte('check_in', tomorrow.toISOString().split('T')[0]);
+        .select('*')
+        .in('property_id', propertyIds)
+        .in('status', ['confirmed', 'pending']);
 
-      const { data: upcomingCheckOuts } = await supabase
-        .from('reservations')
-        .select('*, property:properties!inner(owner_id, title)')
-        .eq('property.owner_id', userId)
-        .eq('status', 'confirmed')
-        .gte('check_out', today.toISOString().split('T')[0])
-        .lte('check_out', tomorrow.toISOString().split('T')[0]);
+      // Charger les propriétés pour enrichir
+      const { data: propertiesData } = await supabase
+        .from('properties')
+        .select('id, owner_id, title')
+        .in('id', propertyIds)
+        .eq('owner_id', userId);
 
-      const { data: newReservations } = await supabase
-        .from('reservations')
-        .select('*, property:properties!inner(owner_id, title)')
-        .eq('property.owner_id', userId)
-        .eq('status', 'pending');
+      const propertiesMap = new Map(propertiesData?.map(p => [p.id, p]) || []);
+
+      // Filtrer et enrichir les réservations
+      const upcomingCheckIns = (allReservations || []).filter((r: any) => {
+        const prop = propertiesMap.get(r.property_id);
+        return prop && r.status === 'confirmed' && 
+          r.check_in >= today.toISOString().split('T')[0] &&
+          r.check_in <= tomorrow.toISOString().split('T')[0];
+      }).map((r: any) => ({ ...r, property: propertiesMap.get(r.property_id) }));
+
+      const upcomingCheckOuts = (allReservations || []).filter((r: any) => {
+        const prop = propertiesMap.get(r.property_id);
+        return prop && r.status === 'confirmed' && 
+          r.check_out >= today.toISOString().split('T')[0] &&
+          r.check_out <= tomorrow.toISOString().split('T')[0];
+      }).map((r: any) => ({ ...r, property: propertiesMap.get(r.property_id) }));
+
+      const newReservations = (allReservations || []).filter((r: any) => {
+        const prop = propertiesMap.get(r.property_id);
+        return prop && r.status === 'pending';
+      }).map((r: any) => ({ ...r, property: propertiesMap.get(r.property_id) }));
 
       const notificationsList = [
         ...(newReservations || []).map((r: any) => ({
@@ -224,9 +258,21 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ userId }) => {
       // Récupérer les informations de la réservation avant la mise à jour
       const { data: reservation } = await supabase
         .from('reservations')
-        .select('*, property:properties(id, title)')
+        .select('*')
         .eq('id', reservationId)
         .single();
+
+      // Charger la propriété séparément si nécessaire
+      let property = null;
+      if (reservation?.property_id) {
+        const { data: propData } = await supabase
+          .from('properties')
+          .select('id, title')
+          .eq('id', reservation.property_id)
+          .maybeSingle();
+        property = propData;
+      }
+      const reservationWithProperty = { ...reservation, property };
 
       const { error } = await supabase
         .from('reservations')
