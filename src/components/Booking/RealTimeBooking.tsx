@@ -58,7 +58,7 @@ const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSu
     checkIfOwner();
     loadBlockedDates();
     checkAuthentication();
-
+    
     const authListener = supabase.auth.onAuthStateChange((_event, session) => {
       setIsAuthenticated(!!session?.user);
     });

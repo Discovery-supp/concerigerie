@@ -99,12 +99,12 @@ const TravelerDashboard: React.FC<TravelerDashboardProps> = ({ userId }) => {
             <ExternalLink className="w-4 h-4" />
             Voir toutes mes réservations
           </Link>
-          <button
-            onClick={() => navigate('/properties?from=dashboard')}
-            className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-light transition-colors"
-          >
-            Nouvelle réservation
-          </button>
+        <button
+          onClick={() => navigate('/properties?from=dashboard')}
+          className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-light transition-colors"
+        >
+          Nouvelle réservation
+        </button>
         </div>
       </div>
 

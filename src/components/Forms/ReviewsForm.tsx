@@ -78,12 +78,7 @@ const ReviewsForm: React.FC<ReviewsFormProps> = ({
       // Charger les avis selon le type d'utilisateur
       let reviewsQuery = supabase
         .from('reviews')
-        .select(`
-          *,
-          user_profiles!reviews_guest_id_fkey(first_name, last_name),
-          properties!reviews_property_id_fkey(title, address),
-          reservations!reviews_reservation_id_fkey(check_in, check_out)
-        `);
+        .select('*');
 
       if (userType === 'owner') {
         // Charger les avis des propriétés de l'utilisateur
@@ -106,7 +101,65 @@ const ReviewsForm: React.FC<ReviewsFormProps> = ({
       const { data: reviewsData, error } = await reviewsQuery;
       if (error) throw error;
 
-      setReviews(reviewsData || []);
+      let enrichedReviews = reviewsData || [];
+      if (enrichedReviews.length > 0) {
+        const reviewerIds = [...new Set(enrichedReviews.map(review => review.reviewer_id || review.guest_id).filter(Boolean))];
+        const propertyIds = [...new Set(enrichedReviews.map(review => review.property_id).filter(Boolean))];
+        const reservationIds = [...new Set(enrichedReviews.map(review => review.reservation_id).filter(Boolean))];
+
+        if (reviewerIds.length > 0) {
+          const { data: reviewers } = await supabase
+            .from('user_profiles')
+            .select('id, first_name, last_name')
+            .in('id', reviewerIds);
+
+          if (reviewers) {
+            const reviewersMap = new Map(reviewers.map(reviewer => [reviewer.id, reviewer]));
+            enrichedReviews = enrichedReviews.map(review => ({
+              ...review,
+              guest_name: (() => {
+                const reviewer = reviewersMap.get(review.reviewer_id || review.guest_id);
+                return reviewer ? `${reviewer.first_name || ''} ${reviewer.last_name || ''}`.trim() : review.guest_name;
+              })()
+            }));
+          }
+        }
+
+        if (propertyIds.length > 0) {
+          const { data: properties } = await supabase
+            .from('properties')
+            .select('id, title, address')
+            .in('id', propertyIds);
+
+          if (properties) {
+            const propertiesMap = new Map(properties.map(property => [property.id, property]));
+            enrichedReviews = enrichedReviews.map(review => ({
+              ...review,
+              property_title: propertiesMap.get(review.property_id)?.title || review.property_title
+            }));
+          }
+        }
+
+        if (reservationIds.length > 0) {
+          const { data: reservationsData } = await supabase
+            .from('reservations')
+            .select('id, check_in, check_out')
+            .in('id', reservationIds);
+
+          if (reservationsData) {
+            const reservationsMap = new Map(reservationsData.map(reservation => [reservation.id, reservation]));
+            enrichedReviews = enrichedReviews.map(review => ({
+              ...review,
+              reservation_dates: review.reservation_id ? {
+                check_in: reservationsMap.get(review.reservation_id)?.check_in,
+                check_out: reservationsMap.get(review.reservation_id)?.check_out
+              } : review.reservation_dates
+            }));
+          }
+        }
+      }
+
+      setReviews(enrichedReviews);
 
       // Charger les propriétés pour les filtres
       if (userType === 'owner') {

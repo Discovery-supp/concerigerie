@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
+import { attachReservationDetails } from '../../services/reservations';
 import { Calendar, Users, DollarSign, Clock, CheckCircle, XCircle, AlertCircle, Edit, Trash2, MessageCircle } from 'lucide-react';
 
 interface Reservation {
@@ -73,11 +74,7 @@ const ReservationManagementForm: React.FC<ReservationManagementFormProps> = ({
 
       let reservationsQuery = supabase
         .from('reservations')
-        .select(`
-          *,
-          properties!inner(title, address, price_per_night),
-          user_profiles!inner(first_name, last_name, email, phone)
-        `);
+        .select('*');
 
       if (userType === 'owner') {
         // Charger les réservations des propriétés de l'utilisateur
@@ -99,8 +96,13 @@ const ReservationManagementForm: React.FC<ReservationManagementFormProps> = ({
         reservationsQuery = reservationsQuery.eq('guest_id', user.id);
       }
 
-      const { data: reservationsData, error } = await reservationsQuery;
+      const { data: reservationsDataRaw, error } = await reservationsQuery;
       if (error) throw error;
+
+      const reservationsData = await attachReservationDetails(reservationsDataRaw, {
+        includeProperty: true,
+        includeGuestProfile: true
+      });
 
       setReservations(reservationsData || []);
 

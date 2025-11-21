@@ -31,14 +31,63 @@ class ConsultationService {
           }
         ])
         .select()
-        .single();
+        .maybeSingle();
 
       if (error) {
         console.error('Erreur lors de l\'enregistrement du message:', error);
         throw new Error(`Erreur lors de l'enregistrement: ${error.message}`);
       }
 
-      return data;
+      // Créer une notification pour tous les admins / super_admins
+      try {
+        const { data: admins, error: adminsError } = await supabase
+          .from('user_profiles')
+          .select('id')
+          .in('user_type', ['admin', 'super_admin']);
+
+        if (adminsError) {
+          console.warn('Erreur lors du chargement des admins pour la notification de consultation:', adminsError);
+        } else if (admins && admins.length > 0) {
+          const notifications = admins.map((admin) => ({
+            user_id: admin.id,
+            type: 'consultation_message',
+            title: 'Nouveau message de contact',
+            message: `Nouveau message de ${messageData.first_name} ${messageData.last_name} : "${messageData.subject}"`,
+            data: {
+              consultation_message_id: data.id,
+              email: messageData.email,
+              phone: messageData.phone,
+              subject: messageData.subject,
+              created_at: data.created_at
+            },
+            is_read: false
+          }));
+
+          const { error: notifError } = await supabase
+            .from('notifications')
+            .insert(notifications);
+
+          if (notifError) {
+            console.warn('Erreur lors de la création des notifications admin (consultation):', notifError);
+          }
+        }
+      } catch (notifException) {
+        console.warn('Exception lors de la création des notifications admin (consultation):', notifException);
+      }
+
+      // data peut être null si maybeSingle ne retourne rien, mais l'insertion a réussi.
+      // Dans ce cas, on renvoie un objet reconstruit à partir des données envoyées.
+      return data ?? {
+        id: undefined,
+        first_name: messageData.first_name,
+        last_name: messageData.last_name,
+        email: messageData.email,
+        phone: messageData.phone,
+        address: messageData.address,
+        subject: messageData.subject,
+        message: messageData.message,
+        status: 'new'
+      };
     } catch (error) {
       console.error('Erreur ConsultationService.saveConsultationMessage:', error);
       throw error;

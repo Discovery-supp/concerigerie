@@ -11,6 +11,7 @@ import CreateAdminAccount from './CreateAdminAccount';
 import EditUserModal from '../Admin/EditUserModal';
 import { Users, Calendar, Home, DollarSign, Settings, BarChart3, FileText, Download, Edit, Trash2, Shield, UserPlus, MessageCircle, Power, PowerOff, X } from 'lucide-react';
 import MessagingSystem from '../Forms/MessagingSystem';
+import { attachReservationDetails } from '../../services/reservations';
 
 interface AdminDashboardProps {
   userId: string;
@@ -129,14 +130,20 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ userId }) => {
       }
 
       // Charger toutes les réservations (y compris les demandes d'annulation)
-      const { data: reservationsData } = await supabase
+      const { data: reservationsRaw, error: reservationsError } = await supabase
         .from('reservations')
-        .select(`
-          *,
-          property:properties(id, title, address, images),
-          guest:user_profiles!reservations_guest_id_fkey(id, first_name, last_name, email)
-        `)
+        .select('*')
         .order('created_at', { ascending: false });
+
+      if (reservationsError) {
+        console.error('[AdminDashboard] Erreur chargement réservations:', reservationsError);
+        throw reservationsError;
+      }
+
+      const reservationsData = await attachReservationDetails(reservationsRaw, {
+        includeProperty: true,
+        includeGuestProfile: true
+      });
 
       // Charger toutes les propriétés
       const { data: propertiesData } = await supabase
@@ -448,22 +455,32 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ userId }) => {
                     try {
                       const { data: propertiesData, error } = await supabase
                         .from('properties')
-                        .select(`
-                          *,
-                          owner:user_profiles!properties_owner_id_fkey(
-                            id,
-                            first_name,
-                            last_name,
-                            email,
-                            phone,
-                            user_type
-                          )
-                        `)
+                        .select('*')
                         .or(`title.ilike.%${searchTerm}%,address.ilike.%${searchTerm}%,description.ilike.%${searchTerm}%`)
                         .limit(50);
                       
                       if (error) throw error;
-                      setProperties(propertiesData || []);
+
+                      let enrichedProperties = propertiesData || [];
+                      if (enrichedProperties.length > 0) {
+                        const ownerIds = [...new Set(enrichedProperties.map(p => p.owner_id).filter(Boolean))];
+                        if (ownerIds.length > 0) {
+                          const { data: owners } = await supabase
+                            .from('user_profiles')
+                            .select('id, first_name, last_name, email, phone, user_type')
+                            .in('id', ownerIds);
+
+                          if (owners) {
+                            const ownersMap = new Map(owners.map(owner => [owner.id, owner]));
+                            enrichedProperties = enrichedProperties.map(property => ({
+                              ...property,
+                              owner: ownersMap.get(property.owner_id) || null
+                            }));
+                          }
+                        }
+                      }
+
+                      setProperties(enrichedProperties);
                     } catch (error) {
                       console.error('Erreur recherche:', error);
                       setProperties([]);

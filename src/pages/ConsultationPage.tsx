@@ -85,16 +85,30 @@ const ConsultationPage: React.FC = () => {
                 <div className="flex items-start space-x-4">
                   <Mail className="w-6 h-6 mt-1 flex-shrink-0" />
                   <div>
-                    <h3 className="font-semibold mb-1">Email</h3>
-                    <p className="text-gray-100">contact@nzooimmo.com</p>
+                    <h3 className="font-semibold mb-1">Email de l'administrateur</h3>
+                    <a
+                      href="mailto:contact@nzooimmo.com"
+                      className="text-gray-100 hover:underline"
+                    >
+                      contact@nzooimmo.com
+                    </a>
                   </div>
                 </div>
 
                 <div className="flex items-start space-x-4">
                   <Phone className="w-6 h-6 mt-1 flex-shrink-0" />
                   <div>
-                    <h3 className="font-semibold mb-1">Téléphone</h3>
-                    <p className="text-gray-100">+243 XX XXX XXXX</p>
+                    <h3 className="font-semibold mb-1">Appeler l'administrateur</h3>
+                    <a
+                      href="tel:+243000000000"
+                      className="inline-flex items-center px-3 py-2 mt-1 bg-white/10 hover:bg-white/20 rounded-lg text-sm font-medium text-white transition-colors"
+                    >
+                      <Phone className="w-4 h-4 mr-2" />
+                      +243 00 000 0000
+                    </a>
+                    <p className="text-xs text-gray-200 mt-1">
+                      Cliquez sur le bouton pour lancer l'appel depuis votre téléphone.
+                    </p>
                   </div>
                 </div>
 

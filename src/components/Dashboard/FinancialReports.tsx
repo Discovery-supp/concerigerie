@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
+import { attachReservationDetails } from '../../services/reservations';
 import { DollarSign, Download, Calendar, TrendingUp, Users, Filter } from 'lucide-react';
 
 interface FinancialReport {
@@ -33,10 +34,7 @@ const FinancialReports: React.FC<FinancialReportsProps> = ({ userId }) => {
 
       let query = supabase
         .from('reservations')
-        .select(`
-          *,
-          property:properties!inner(owner_id, price_per_night)
-        `)
+        .select('*')
         .eq('status', 'completed');
 
       // Filtrer par période personnalisée si sélectionnée
@@ -44,7 +42,11 @@ const FinancialReports: React.FC<FinancialReportsProps> = ({ userId }) => {
         query = query.gte('created_at', startDate).lte('created_at', endDate);
       }
 
-      const { data: reservations } = await query;
+      const { data: reservationsRaw } = await query;
+
+      const reservations = await attachReservationDetails(reservationsRaw || [], {
+        includeProperty: true
+      });
 
       // Charger les hôtes avec leurs forfaits
       const { data: hosts } = await supabase
@@ -135,12 +137,28 @@ const FinancialReports: React.FC<FinancialReportsProps> = ({ userId }) => {
   const handleExportHosts = async () => {
     try {
       // Charger tous les hôtes avec leurs informations de paiement
-      const { data: hosts } = await supabase
+      const { data: hostsRaw } = await supabase
         .from('host_profiles')
-        .select(`
-          *,
-          user:user_profiles!host_profiles_user_id_fkey(email, first_name, last_name, phone)
-        `);
+        .select('*');
+
+      let hosts = hostsRaw || [];
+      if (hosts.length > 0) {
+        const userIds = [...new Set(hosts.map(host => host.user_id).filter(Boolean))];
+        if (userIds.length > 0) {
+          const { data: users } = await supabase
+            .from('user_profiles')
+            .select('id, email, first_name, last_name, phone')
+            .in('id', userIds);
+
+          if (users) {
+            const usersMap = new Map(users.map(user => [user.id, user]));
+            hosts = hosts.map(host => ({
+              ...host,
+              user: usersMap.get(host.user_id) || null
+            }));
+          }
+        }
+      }
 
       const csv = [
         ['Email', 'Nom', 'Prénom', 'Téléphone', 'Forfait', 'Taux commission', 'Méthode paiement', 'Compte bancaire', 'Mobile Money'].join(','),

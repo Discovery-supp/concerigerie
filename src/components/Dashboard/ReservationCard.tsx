@@ -121,16 +121,16 @@ const ReservationCard: React.FC<ReservationCardProps> = ({ reservation, userType
         )}
         <div className="flex-1">
           <div className="flex justify-between items-start mb-2">
-            <div className="flex-1">
-              <h3 className="text-lg font-semibold text-gray-900 hover:text-primary transition-colors">
-                {reservation.property?.title || 'Propriété'}
-              </h3>
-              <div className="flex items-center text-gray-600 mt-1">
-                <MapPin className="w-4 h-4 mr-1" />
-                <span className="text-sm">{reservation.property?.address || ''}</span>
-              </div>
-            </div>
-            {getStatusBadge(reservation.status)}
+        <div className="flex-1">
+          <h3 className="text-lg font-semibold text-gray-900 hover:text-primary transition-colors">
+            {reservation.property?.title || 'Propriété'}
+          </h3>
+          <div className="flex items-center text-gray-600 mt-1">
+            <MapPin className="w-4 h-4 mr-1" />
+            <span className="text-sm">{reservation.property?.address || ''}</span>
+          </div>
+        </div>
+        {getStatusBadge(reservation.status)}
           </div>
         </div>
       </div>

@@ -5,6 +5,88 @@ type Reservation = Database['public']['Tables']['reservations']['Row']
 type ReservationInsert = Database['public']['Tables']['reservations']['Insert']
 type ReservationUpdate = Database['public']['Tables']['reservations']['Update']
 
+type ReservationDetailOptions = {
+  includeProperty?: boolean
+  includeGuestProfile?: boolean
+  propertyColumns?: string
+  guestColumns?: string
+}
+
+const DEFAULT_PROPERTY_COLUMNS = 'id, title, address, images, owner_id, price_per_night'
+const DEFAULT_GUEST_COLUMNS = 'id, first_name, last_name, email, phone, user_type'
+
+async function attachReservationDetails(
+  reservations: any[] | null | undefined,
+  options: ReservationDetailOptions = {}
+) {
+  const {
+    includeProperty = true,
+    includeGuestProfile = false,
+    propertyColumns = DEFAULT_PROPERTY_COLUMNS,
+    guestColumns = DEFAULT_GUEST_COLUMNS
+  } = options
+
+  if (!Array.isArray(reservations) || reservations.length === 0) {
+    return []
+  }
+
+  const enrichedReservations = reservations.map(res => ({ ...res }))
+
+  if (includeProperty) {
+    const propertyIds = [
+      ...new Set(
+        enrichedReservations
+          .map(res => res.property_id)
+          .filter(Boolean)
+      )
+    ]
+
+    if (propertyIds.length > 0) {
+      const { data: properties, error: propertiesError } = await supabase
+        .from('properties')
+        .select(propertyColumns)
+        .in('id', propertyIds)
+
+      if (propertiesError) {
+        console.warn('[reservationsService] Erreur chargement propriétés:', propertiesError)
+      } else if (properties) {
+        const propertiesMap = new Map(properties.map(property => [property.id, property]))
+        enrichedReservations.forEach(reservation => {
+          reservation.property = propertiesMap.get(reservation.property_id) || reservation.property || null
+        })
+      }
+    }
+  }
+
+  if (includeGuestProfile) {
+    const guestIds = [
+      ...new Set(
+        enrichedReservations
+          .map(res => res.guest_id)
+          .filter(Boolean)
+      )
+    ]
+
+    if (guestIds.length > 0) {
+      const { data: guests, error: guestError } = await supabase
+        .from('user_profiles')
+        .select(guestColumns)
+        .in('id', guestIds)
+
+      if (guestError) {
+        console.warn('[reservationsService] Erreur chargement profils invités:', guestError)
+      } else if (guests) {
+        const guestsMap = new Map(guests.map(guest => [guest.id, guest]))
+        enrichedReservations.forEach(reservation => {
+          reservation.guest = guestsMap.get(reservation.guest_id) || reservation.guest || null
+        })
+      }
+    }
+  }
+
+  return enrichedReservations
+}
+
 export const reservationsService = {
   // Créer une nouvelle réservation
   async createReservation(reservationData: ReservationInsert) {
@@ -47,31 +129,12 @@ export const reservationsService = {
         return []
       }
 
-      // Charger les propriétés séparément
-      const propertyIds = [...new Set(reservations.map(r => r.property_id).filter(Boolean))]
-      
-      let propertiesMap = new Map()
-      if (propertyIds.length > 0) {
-        const { data: properties, error: propertiesError } = await supabase
-          .from('properties')
-          .select('*')
-          .in('id', propertyIds)
+      const reservationsWithDetails = await attachReservationDetails(reservations, {
+        includeProperty: true
+      })
 
-        if (propertiesError) {
-          console.warn('Erreur chargement propriétés:', propertiesError)
-        } else if (properties) {
-          propertiesMap = new Map(properties.map(p => [p.id, p]))
-        }
-      }
-
-      // Combiner les réservations avec leurs propriétés
-      const reservationsWithProperties = reservations.map(reservation => ({
-        ...reservation,
-        property: propertiesMap.get(reservation.property_id) || null
-      }))
-
-      console.log('[getUserReservations] Réservations chargées:', reservationsWithProperties.length)
-      return reservationsWithProperties
+      console.log('[getUserReservations] Réservations chargées:', reservationsWithDetails.length)
+      return reservationsWithDetails
     } catch (error) {
       console.error('Erreur récupération réservations utilisateur:', error)
       throw error
@@ -149,30 +212,11 @@ export const reservationsService = {
 
       if (resError) throw resError
 
-      // Charger la propriété et le guest séparément
-      let property = null;
-      let guest = null;
-      
-      if (reservation.property_id) {
-        const { data: propData } = await supabase
-          .from('properties')
-          .select('*')
-          .eq('id', reservation.property_id)
-          .maybeSingle();
-        property = propData;
-      }
-
-      if (reservation.guest_id) {
-        const { data: guestData } = await supabase
-          .from('user_profiles')
-          .select('*')
-          .eq('id', reservation.guest_id)
-          .maybeSingle();
-        guest = guestData;
-      }
-
       // Ajouter les données chargées à la réservation
-      const reservationWithData = { ...reservation, property, guest }
+      const [reservationWithData] = await attachReservationDetails([reservation], {
+        includeProperty: true,
+        includeGuestProfile: true
+      })
 
       // Trouver tous les admins
       const { data: admins, error: adminError } = await supabase
@@ -207,10 +251,12 @@ export const reservationsService = {
       }
 
       // Mettre à jour la réservation avec le statut de demande d'annulation
+      // Mettre à jour le statut de la réservation.
+      // Attention: certaines bases ne possèdent pas encore la colonne "cancellation_reason",
+      // donc on ne l'utilise pas ici pour éviter l'erreur de schema cache.
       const { data: updatedReservation, error: updateError } = await supabase
         .from('reservations')
         .update({ 
-          cancellation_reason: reason || 'Demande d\'annulation par le voyageur',
           status: 'pending_cancellation' // Nouveau statut pour les demandes d'annulation
         })
         .eq('id', reservationId)
@@ -259,19 +305,35 @@ export const reservationsService = {
   // Récupérer les statistiques de réservation pour un propriétaire
   async getOwnerStats(ownerId: string) {
     try {
+      const { data: ownerProperties, error: ownerPropsError } = await supabase
+        .from('properties')
+        .select('id')
+        .eq('owner_id', ownerId)
+
+      if (ownerPropsError) throw ownerPropsError
+
+      const propertyIds = ownerProperties?.map(p => p.id) || []
+      if (propertyIds.length === 0) {
+        return {
+          totalReservations: 0,
+          totalRevenue: 0,
+          pendingReservations: 0,
+          confirmedReservations: 0,
+          completedReservations: 0,
+          cancelledReservations: 0
+        }
+      }
+
       const { data, error } = await supabase
         .from('reservations')
-        .select(`
-          *,
-          properties!inner(owner_id)
-        `)
-        .eq('properties.owner_id', ownerId)
+        .select('*')
+        .in('property_id', propertyIds)
 
       if (error) throw error
 
       const stats = {
         totalReservations: data.length,
-        totalRevenue: data.reduce((sum, res) => sum + Number(res.total_amount), 0),
+        totalRevenue: data.reduce((sum, res) => sum + Number(res.total_amount || 0), 0),
         pendingReservations: data.filter(res => res.status === 'pending').length,
         confirmedReservations: data.filter(res => res.status === 'confirmed').length,
         completedReservations: data.filter(res => res.status === 'completed').length,
@@ -290,16 +352,25 @@ export const reservationsService = {
     try {
       const { data, error } = await supabase
         .from('reservations')
-        .select(`
-          *,
-          property:properties(*),
-          guest:user_profiles(*)
-        `)
+        .select('*')
         .eq('id', id)
-        .single()
+        .maybeSingle()
 
-      if (error) throw error
-      return data
+      if (error && error.code !== 'PGRST116') {
+        // Erreur autre que "row not found"
+        throw error
+      }
+
+      if (!data) {
+        throw new Error('Réservation introuvable')
+      }
+
+      const [reservationWithDetails] = await attachReservationDetails([data], {
+        includeProperty: true,
+        includeGuestProfile: true
+      })
+
+      return reservationWithDetails
     } catch (error) {
       console.error('Erreur récupération réservation:', error)
       throw error
@@ -308,3 +379,5 @@ export const reservationsService = {
 }
 
 export default reservationsService
+
+export { attachReservationDetails }

@@ -86,6 +86,24 @@ const ConfirmationPage: React.FC = () => {
     }
   };
 
+  const handleContactSupport = () => {
+    if (!reservation) {
+      navigate('/consultation');
+      return;
+    }
+
+    const params = new URLSearchParams();
+    params.set(
+      'subject',
+      `Question sur la réservation ${reservation.id} pour ${reservation.property?.title || 'une propriété'}`
+    );
+    if (reservation.property?.address) {
+      params.set('address', reservation.property.address);
+    }
+
+    navigate(`/consultation?${params.toString()}`);
+  };
+
   const handleDownloadReceipt = () => {
     alert('Le téléchargement du reçu sera disponible prochainement.');
   };
@@ -326,17 +344,18 @@ const ConfirmationPage: React.FC = () => {
             Notre équipe est disponible 24/7 pour répondre à vos questions
           </p>
           <div className="flex justify-center space-x-4">
-            <a
-              href="mailto:support@nzooimmo.com"
+            <button
+              type="button"
+              onClick={handleContactSupport}
               className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
             >
               Nous contacter
-            </a>
+            </button>
             <a
-              href="tel:+243123456789"
+              href="tel:+243000000000"
               className="px-6 py-2 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors"
             >
-              Appeler
+              Appeler l'administrateur
             </a>
           </div>
         </div>

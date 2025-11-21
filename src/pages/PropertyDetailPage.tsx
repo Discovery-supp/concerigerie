@@ -112,15 +112,15 @@ const PropertyDetailPage: React.FC = () => {
       if (data.owner_id) {
         try {
           const { data: hostData, error: hostError } = await supabase
-            .from('user_profiles')
-            .select('id, first_name, last_name, created_at')
-            .eq('id', data.owner_id)
+          .from('user_profiles')
+          .select('id, first_name, last_name, created_at')
+          .eq('id', data.owner_id)
             .maybeSingle();
-          
+        
           if (hostError) {
             console.warn('Erreur chargement hôte:', hostError);
           } else if (hostData) {
-            setHostInfo(hostData);
+          setHostInfo(hostData);
           }
         } catch (hostError) {
           console.warn('Erreur chargement informations hôte:', hostError);

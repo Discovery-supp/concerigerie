@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { DollarSign, Calendar, Download, Filter, TrendingUp } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { attachReservationDetails } from '../../services/reservations';
 
 interface PaymentReport {
   id: string;
@@ -35,19 +36,29 @@ const PaymentReports: React.FC<PaymentReportsProps> = ({ userId, userType }) => 
       if (userType === 'owner') {
         // Charger les rapports de paiement pour l'hôte
         // Calculer les revenus par période
-        const { data: reservations } = await supabase
+        const { data: ownerProperties } = await supabase
+          .from('properties')
+          .select('id')
+          .eq('owner_id', userId);
+
+        const propertyIds = ownerProperties?.map(p => p.id) || [];
+        if (propertyIds.length === 0) {
+          setReports([]);
+          return;
+        }
+
+        const { data: reservationsRaw } = await supabase
           .from('reservations')
-          .select(`
-            id,
-            total_amount,
-            created_at,
-            property:properties!inner(owner_id, price_per_night)
-          `)
-          .eq('property.owner_id', userId)
+          .select('*')
+          .in('property_id', propertyIds)
           .eq('status', 'completed');
 
+        const reservationsWithDetails = await attachReservationDetails(reservationsRaw || [], {
+          includeProperty: true
+        });
+
         // Calculer les revenus par mois
-        const monthlyReports = await calculateMonthlyReports(reservations || []);
+        const monthlyReports = await calculateMonthlyReports(reservationsWithDetails || []);
         setReports(monthlyReports);
       } else {
         // Admin: voir tous les paiements

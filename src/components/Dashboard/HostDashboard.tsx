@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
+import { attachReservationDetails } from '../../services/reservations';
+import { attachReservationDetails } from '../../services/reservations';
 import HostEarnings from './HostEarnings';
 import { 
   Calendar, 
@@ -44,6 +46,10 @@ interface Review {
   comment: string;
   guest_name?: string;
   created_at: string;
+  reviewer?: {
+    first_name?: string;
+    last_name?: string;
+  } | null;
 }
 
 interface Property {
@@ -132,61 +138,57 @@ const HostDashboard: React.FC = () => {
         // Utiliser LEFT JOIN au lieu de INNER JOIN pour éviter de perdre des réservations
         const { data: allReservations, error: resError } = await supabase
           .from('reservations')
-          .select(`
-            *,
-            property:properties(id, title, address, owner_id)
-          `)
+          .select('*')
+          .in('property_id', propertyIds)
           .order('created_at', { ascending: false });
 
         if (resError) {
           console.error('Erreur chargement réservations en attente:', resError);
         } else {
-          // Filtrer côté client pour ne garder que les réservations des propriétés de l'utilisateur
-          const reservations = (allReservations || []).filter((res: any) => {
-            return res.property && res.property.owner_id === user.id;
+          reservationsData = allReservations || [];
+
+          const reservationsWithDetails = await attachReservationDetails(reservationsData, {
+            includeProperty: true,
+            includeGuestProfile: true
           });
+
+          // Filtrer pour ne garder que celles de l'hôte (sécurité supplémentaire)
+          reservationsData = reservationsWithDetails.filter((res: any) => res.property?.owner_id === user.id);
           
           // eslint-disable-next-line no-console
-          console.log('[HostDashboard] pending reservations loaded:', reservations?.length || 0, reservations);
-          
-          // Utiliser les réservations filtrées
-          reservationsData = reservations;
-        }
-
-        // Enrichir les réservations avec les profils des invités
-        if (reservationsData && reservationsData.length > 0) {
-          const guestIds = [...new Set(reservationsData.map((r: any) => r.guest_id).filter(Boolean))];
-          if (guestIds.length > 0) {
-            const { data: guestProfiles, error: guestError } = await supabase
-              .from('user_profiles')
-              .select('id, first_name, last_name, phone')
-              .in('id', guestIds);
-
-            if (guestError) {
-              console.error('Erreur chargement profils invités:', guestError);
-            } else {
-              const guestMap = new Map(guestProfiles?.map(g => [g.id, g]) || []);
-              reservationsData.forEach((reservation: any) => {
-                reservation.guest = guestMap.get(reservation.guest_id);
-              });
-            }
-          }
+          console.log('[HostDashboard] pending reservations loaded:', reservationsData?.length || 0, reservationsData);
         }
 
         setReservations(reservationsData || []);
 
         // Charger les avis
-        const { data: reviewsData } = await supabase
+        const { data: reviewsRaw } = await supabase
           .from('reviews')
-          .select(`
-            *,
-            user_profiles!reviews_guest_id_fkey(first_name, last_name)
-          `)
+          .select('*')
           .in('property_id', propertyIds)
           .order('created_at', { ascending: false })
           .limit(5);
 
-        setReviews(reviewsData || []);
+        let reviewsData = reviewsRaw || [];
+        if (reviewsData.length > 0) {
+          const reviewerIds = [...new Set(reviewsData.map(review => review.reviewer_id).filter(Boolean))];
+          if (reviewerIds.length > 0) {
+            const { data: reviewers } = await supabase
+              .from('user_profiles')
+              .select('id, first_name, last_name')
+              .in('id', reviewerIds);
+
+            if (reviewers) {
+              const reviewersMap = new Map(reviewers.map(reviewer => [reviewer.id, reviewer]));
+              reviewsData = reviewsData.map(review => ({
+                ...review,
+                reviewer: reviewersMap.get(review.reviewer_id) || null
+              }));
+            }
+          }
+        }
+
+        setReviews(reviewsData);
       }
 
       // Calculer les statistiques
