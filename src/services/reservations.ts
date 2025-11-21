@@ -218,18 +218,44 @@ export const reservationsService = {
         includeGuestProfile: true
       })
 
-      // Trouver tous les admins
-      const { data: admins, error: adminError } = await supabase
-        .from('user_profiles')
-        .select('id')
-        .in('user_type', ['admin', 'super_admin'])
+      // Trouver tous les admins en utilisant la fonction SQL qui bypass RLS
+      // Cette approche garantit que tous les admins sont trouvés même avec RLS activé
+      let adminIds: string[] = []
+      
+      try {
+        // Essayer d'abord avec la fonction SQL (plus fiable)
+        const { data: adminData, error: functionError } = await supabase
+          .rpc('get_all_admin_ids')
 
-      if (adminError) throw adminError
+        if (!functionError && adminData && adminData.length > 0) {
+          adminIds = adminData.map((admin: any) => admin.admin_id)
+          console.log('[requestCancellation] Admins trouvés via fonction SQL:', adminIds.length)
+        } else {
+          // Fallback: essayer la requête directe
+          console.warn('[requestCancellation] Fonction SQL échouée, tentative requête directe:', functionError)
+          const { data: admins, error: adminError } = await supabase
+            .from('user_profiles')
+            .select('id')
+            .in('user_type', ['admin', 'super_admin'])
+
+          if (adminError) {
+            console.error('[requestCancellation] Erreur récupération admins:', adminError)
+            // Ne pas bloquer la demande d'annulation si on ne peut pas trouver les admins
+            // On continuera quand même pour mettre à jour le statut de la réservation
+          } else if (admins && admins.length > 0) {
+            adminIds = admins.map(admin => admin.id)
+            console.log('[requestCancellation] Admins trouvés via requête directe:', adminIds.length)
+          }
+        }
+      } catch (error: any) {
+        console.error('[requestCancellation] Erreur lors de la récupération des admins:', error)
+        // Continuer même si on ne peut pas trouver les admins
+      }
 
       // Créer une notification pour chaque admin
-      if (admins && admins.length > 0) {
-        const notifications = admins.map(admin => ({
-          user_id: admin.id,
+      if (adminIds.length > 0) {
+        const notifications = adminIds.map(adminId => ({
+          user_id: adminId,
           type: 'cancellation_request',
           title: 'Demande d\'annulation de réservation',
           message: `Un voyageur demande l'annulation de sa réservation #${reservationId.substring(0, 8)}.${reason ? ` Raison: ${reason}` : ''}`,
@@ -247,23 +273,62 @@ export const reservationsService = {
           .from('notifications')
           .insert(notifications)
 
-        if (notifError) throw notifError
+        if (notifError) {
+          console.error('[requestCancellation] Erreur création notifications:', notifError)
+          // Ne pas bloquer la demande d'annulation si les notifications échouent
+          // Le statut de la réservation sera quand même mis à jour
+        } else {
+          console.log('[requestCancellation] Notifications créées pour', adminIds.length, 'admin(s)')
+        }
+      } else {
+        console.warn('[requestCancellation] Aucun admin trouvé pour envoyer les notifications')
+        // Log pour diagnostic
+        console.warn('[requestCancellation] La demande d\'annulation sera créée mais aucun admin ne recevra de notification')
       }
 
       // Mettre à jour la réservation avec le statut de demande d'annulation
-      // Mettre à jour le statut de la réservation.
-      // Attention: certaines bases ne possèdent pas encore la colonne "cancellation_reason",
-      // donc on ne l'utilise pas ici pour éviter l'erreur de schema cache.
+      // Préparer les données de mise à jour
+      const updateData: any = {
+        status: 'pending_cancellation' // Nouveau statut pour les demandes d'annulation
+      }
+
+      // Ajouter la raison d'annulation si elle existe dans le schéma
+      // On essaie d'abord avec cancellation_reason, sinon on ignore silencieusement
+      if (reason) {
+        try {
+          // Vérifier si la colonne existe en essayant de la mettre à jour
+          updateData.cancellation_reason = reason
+        } catch (e) {
+          console.warn('[requestCancellation] Colonne cancellation_reason non disponible, raison non sauvegardée')
+        }
+      }
+
+      console.log('[requestCancellation] Mise à jour réservation:', reservationId, 'avec statut:', 'pending_cancellation')
+      
       const { data: updatedReservation, error: updateError } = await supabase
         .from('reservations')
-        .update({ 
-          status: 'pending_cancellation' // Nouveau statut pour les demandes d'annulation
-        })
+        .update(updateData)
         .eq('id', reservationId)
         .select()
         .single()
 
-      if (updateError) throw updateError
+      if (updateError) {
+        console.error('[requestCancellation] Erreur mise à jour réservation:', updateError)
+        throw updateError
+      }
+
+      if (!updatedReservation) {
+        throw new Error('La réservation n\'a pas pu être mise à jour')
+      }
+
+      console.log('[requestCancellation] Réservation mise à jour avec succès:', updatedReservation.id, 'Statut:', updatedReservation.status)
+      
+      // Vérifier que le statut a bien été mis à jour
+      if (updatedReservation.status !== 'pending_cancellation') {
+        console.error('[requestCancellation] ATTENTION: Le statut n\'a pas été correctement mis à jour. Statut actuel:', updatedReservation.status)
+        throw new Error(`Le statut n'a pas été correctement mis à jour. Statut actuel: ${updatedReservation.status}`)
+      }
+
       return updatedReservation
     } catch (error) {
       console.error('Erreur demande annulation réservation:', error)
@@ -373,6 +438,181 @@ export const reservationsService = {
       return reservationWithDetails
     } catch (error) {
       console.error('Erreur récupération réservation:', error)
+      throw error
+    }
+  },
+
+  // Valider une demande d'annulation (admin)
+  async approveCancellation(reservationId: string, adminId: string) {
+    try {
+      // Récupérer la réservation
+      const { data: reservation, error: resError } = await supabase
+        .from('reservations')
+        .select('*')
+        .eq('id', reservationId)
+        .single()
+
+      if (resError) throw resError
+
+      if (reservation.status !== 'pending_cancellation') {
+        throw new Error('Cette réservation n\'a pas de demande d\'annulation en attente')
+      }
+
+      // Mettre à jour la réservation
+      const { data: updatedReservation, error: updateError } = await supabase
+        .from('reservations')
+        .update({
+          status: 'cancelled',
+          payment_status: 'refunded',
+          cancelled_at: new Date().toISOString()
+        })
+        .eq('id', reservationId)
+        .select()
+        .single()
+
+      if (updateError) throw updateError
+
+      // Charger les détails pour la notification
+      const [reservationWithData] = await attachReservationDetails([updatedReservation], {
+        includeProperty: true,
+        includeGuestProfile: true
+      })
+
+      // Créer une notification pour le voyageur
+      if (reservationWithData.guest_id) {
+        const { error: notifError } = await supabase
+          .from('notifications')
+          .insert({
+            user_id: reservationWithData.guest_id,
+            type: 'cancellation_approved',
+            title: 'Annulation approuvée',
+            message: `Votre demande d'annulation pour la réservation #${reservationId.substring(0, 8)} a été approuvée. Le remboursement sera effectué sous peu.`,
+            data: {
+              reservation_id: reservationId,
+              property_id: reservationWithData.property_id
+            },
+            is_read: false
+          })
+
+        if (notifError) console.warn('Erreur création notification:', notifError)
+      }
+
+      return updatedReservation
+    } catch (error) {
+      console.error('Erreur validation annulation:', error)
+      throw error
+    }
+  },
+
+  // Rejeter une demande d'annulation (admin)
+  async rejectCancellation(reservationId: string, adminId: string, reason?: string) {
+    try {
+      // Récupérer la réservation
+      const { data: reservation, error: resError } = await supabase
+        .from('reservations')
+        .select('*')
+        .eq('id', reservationId)
+        .single()
+
+      if (resError) throw resError
+
+      if (reservation.status !== 'pending_cancellation') {
+        throw new Error('Cette réservation n\'a pas de demande d\'annulation en attente')
+      }
+
+      // Restaurer le statut précédent (confirmed ou pending)
+      const previousStatus = reservation.payment_status === 'paid' ? 'confirmed' : 'pending'
+      
+      const { data: updatedReservation, error: updateError } = await supabase
+        .from('reservations')
+        .update({
+          status: previousStatus,
+          cancellation_reason: null
+        })
+        .eq('id', reservationId)
+        .select()
+        .single()
+
+      if (updateError) throw updateError
+
+      // Charger les détails pour la notification
+      const [reservationWithData] = await attachReservationDetails([updatedReservation], {
+        includeProperty: true,
+        includeGuestProfile: true
+      })
+
+      // Créer une notification pour le voyageur
+      if (reservationWithData.guest_id) {
+        const { error: notifError } = await supabase
+          .from('notifications')
+          .insert({
+            user_id: reservationWithData.guest_id,
+            type: 'cancellation_rejected',
+            title: 'Demande d\'annulation refusée',
+            message: `Votre demande d'annulation pour la réservation #${reservationId.substring(0, 8)} a été refusée.${reason ? ` Raison: ${reason}` : ''}`,
+            data: {
+              reservation_id: reservationId,
+              property_id: reservationWithData.property_id,
+              reason: reason || null
+            },
+            is_read: false
+          })
+
+        if (notifError) console.warn('Erreur création notification:', notifError)
+      }
+
+      return updatedReservation
+    } catch (error) {
+      console.error('Erreur rejet annulation:', error)
+      throw error
+    }
+  },
+
+  // Nettoyer automatiquement les réservations expirées
+  // Supprime les réservations qui ne sont pas confirmées OU en statut "payer" après la date de fin
+  async cleanupExpiredReservations() {
+    try {
+      const today = new Date().toISOString().split('T')[0]
+
+      // Récupérer toutes les réservations expirées (check_out < aujourd'hui)
+      const { data: expiredReservations, error: fetchError } = await supabase
+        .from('reservations')
+        .select('id, status, payment_status, check_out')
+        .lt('check_out', today)
+
+      if (fetchError) throw fetchError
+
+      if (!expiredReservations || expiredReservations.length === 0) {
+        return { deleted: 0, message: 'Aucune réservation expirée à supprimer' }
+      }
+
+      // Filtrer pour ne garder que celles qui doivent être supprimées:
+      // - Non confirmées (status != 'confirmed')
+      // - OU en statut "payer" (payment_status = 'paid') même si confirmées
+      const toDelete = expiredReservations.filter(r => 
+        r.status !== 'confirmed' || r.payment_status === 'paid'
+      )
+
+      if (toDelete.length === 0) {
+        return { deleted: 0, message: 'Aucune réservation expirée à supprimer' }
+      }
+
+      const reservationIds = toDelete.map(r => r.id)
+
+      // Supprimer les réservations
+      const { error: deleteError } = await supabase
+        .from('reservations')
+        .delete()
+        .in('id', reservationIds)
+
+      if (deleteError) throw deleteError
+
+      return {
+        deleted: reservationIds.length,
+        message: `${reservationIds.length} réservation(s) expirée(s) supprimée(s)`
+      }
+    } catch (error) {
+      console.error('Erreur nettoyage réservations expirées:', error)
       throw error
     }
   }

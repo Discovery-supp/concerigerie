@@ -11,7 +11,7 @@ import CreateAdminAccount from './CreateAdminAccount';
 import EditUserModal from '../Admin/EditUserModal';
 import { Users, Calendar, Home, DollarSign, Settings, BarChart3, FileText, Download, Edit, Trash2, Shield, UserPlus, MessageCircle, Power, PowerOff, X } from 'lucide-react';
 import MessagingSystem from '../Forms/MessagingSystem';
-import { attachReservationDetails } from '../../services/reservations';
+import { attachReservationDetails, reservationsService } from '../../services/reservations';
 
 interface AdminDashboardProps {
   userId: string;
@@ -130,20 +130,110 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ userId }) => {
       }
 
       // Charger toutes les réservations (y compris les demandes d'annulation)
+      // Essayer d'abord une requête spécifique pour pending_cancellation pour diagnostic
+      const { data: pendingCancellationTest, error: testError } = await supabase
+        .from('reservations')
+        .select('id, status')
+        .eq('status', 'pending_cancellation');
+      
+      console.log('[AdminDashboard] Test requête pending_cancellation:', {
+        count: pendingCancellationTest?.length || 0,
+        data: pendingCancellationTest,
+        error: testError,
+        errorMessage: testError?.message,
+        errorCode: testError?.code,
+        errorDetails: testError?.details
+      });
+
+      // Vérifier les permissions RLS
+      const { data: allReservationsTest, error: allTestError } = await supabase
+        .from('reservations')
+        .select('id, status')
+        .limit(5);
+      
+      console.log('[AdminDashboard] Test chargement toutes réservations (limite 5):', {
+        count: allReservationsTest?.length || 0,
+        data: allReservationsTest,
+        error: allTestError,
+        errorMessage: allTestError?.message,
+        errorCode: allTestError?.code
+      });
+
       const { data: reservationsRaw, error: reservationsError } = await supabase
         .from('reservations')
         .select('*')
         .order('created_at', { ascending: false });
 
       if (reservationsError) {
-        console.error('[AdminDashboard] Erreur chargement réservations:', reservationsError);
-        throw reservationsError;
+        console.error('[AdminDashboard] Erreur chargement réservations:', {
+          error: reservationsError,
+          message: reservationsError.message,
+          code: reservationsError.code,
+          details: reservationsError.details,
+          hint: reservationsError.hint
+        });
+        
+        // Si c'est une erreur de permissions RLS, afficher un message plus clair
+        if (reservationsError.code === '42501' || reservationsError.message?.includes('policy') || reservationsError.message?.includes('permission')) {
+          console.error('[AdminDashboard] ERREUR DE PERMISSIONS RLS - Les politiques de sécurité empêchent la lecture des réservations');
+          console.error('[AdminDashboard] Vérifiez que vous êtes connecté en tant qu\'admin et que les politiques RLS permettent la lecture');
+        }
+        
+        // Ne pas throw pour éviter de bloquer l'interface, mais continuer avec un tableau vide
+        console.warn('[AdminDashboard] Continuation avec un tableau vide de réservations');
+        // Initialiser avec un tableau vide pour éviter les erreurs
+        setReservations([]);
+        setStats(prev => ({ ...prev, totalReservations: 0 }));
+        return; // Sortir de la fonction pour éviter de continuer avec des données invalides
       }
 
-      const reservationsData = await attachReservationDetails(reservationsRaw, {
+      console.log('[AdminDashboard] Réservations brutes chargées:', reservationsRaw?.length || 0);
+      console.log('[AdminDashboard] Type de reservationsRaw:', typeof reservationsRaw, Array.isArray(reservationsRaw));
+      
+      // S'assurer que reservationsRaw est un tableau
+      const safeReservationsRaw = Array.isArray(reservationsRaw) ? reservationsRaw : (reservationsRaw ? [reservationsRaw] : []);
+      console.log('[AdminDashboard] Réservations après normalisation:', safeReservationsRaw.length);
+      
+      // Log des statuts pour diagnostic
+      if (safeReservationsRaw && safeReservationsRaw.length > 0) {
+        const statusCounts = safeReservationsRaw.reduce((acc: any, r: any) => {
+          acc[r.status] = (acc[r.status] || 0) + 1;
+          return acc;
+        }, {});
+        console.log('[AdminDashboard] Répartition des statuts:', statusCounts);
+        console.log('[AdminDashboard] Demandes d\'annulation (pending_cancellation):', statusCounts.pending_cancellation || 0);
+        
+        // Log détaillé des réservations avec pending_cancellation
+        const pendingCancellations = safeReservationsRaw.filter((r: any) => r.status === 'pending_cancellation');
+        if (pendingCancellations.length > 0) {
+          console.log('[AdminDashboard] Réservations avec pending_cancellation trouvées:', pendingCancellations);
+          pendingCancellations.forEach((r: any) => {
+            console.log('[AdminDashboard] - Réservation ID:', r.id, 'Statut:', r.status, 'Check-in:', r.check_in);
+          });
+        } else {
+          console.warn('[AdminDashboard] Aucune réservation avec statut pending_cancellation trouvée dans les données brutes');
+          // Afficher tous les statuts pour diagnostic
+          safeReservationsRaw.forEach((r: any) => {
+            console.log('[AdminDashboard] - Réservation ID:', r.id, 'Statut actuel:', r.status);
+          });
+        }
+      } else {
+        console.warn('[AdminDashboard] Aucune réservation trouvée dans la base de données');
+      }
+
+      const reservationsData = await attachReservationDetails(safeReservationsRaw, {
         includeProperty: true,
         includeGuestProfile: true
       });
+
+      console.log('[AdminDashboard] Réservations avec détails:', reservationsData?.length || 0);
+      
+      // Vérifier après l'enrichissement
+      const pendingAfterEnrich = reservationsData?.filter((r: any) => r.status === 'pending_cancellation') || [];
+      console.log('[AdminDashboard] Demandes d\'annulation après enrichissement:', pendingAfterEnrich.length);
+      if (pendingAfterEnrich.length > 0) {
+        console.log('[AdminDashboard] Détails des demandes d\'annulation:', pendingAfterEnrich);
+      }
 
       // Charger toutes les propriétés
       const { data: propertiesData } = await supabase
@@ -170,11 +260,19 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ userId }) => {
       // Calculer les revenus des prestataires (à partir des réservations de services de prestataires)
       // Note: Cette logique dépend de votre structure de données pour les services de prestataires
       // Pour l'instant, on peut utiliser une table séparée ou un champ dans les réservations
-      const { data: providerBookings } = await supabase
-        .from('service_bookings')
-        .select('total_amount, status')
-        .in('status', ['confirmed', 'completed'])
-        .catch(() => ({ data: null })); // Si la table n'existe pas, ignorer
+      let providerBookings = null;
+      try {
+        const { data, error } = await supabase
+          .from('service_bookings')
+          .select('total_amount, status')
+          .in('status', ['confirmed', 'completed']);
+        if (!error) {
+          providerBookings = data;
+        }
+      } catch (e) {
+        // Si la table n'existe pas, ignorer silencieusement
+        console.warn('[AdminDashboard] Table service_bookings non disponible:', e);
+      }
 
       const providerServicesRevenue = providerBookings?.reduce((sum: number, booking: any) => 
         sum + Number(booking.total_amount || 0), 0) || 0;
@@ -693,8 +791,31 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ userId }) => {
       {/* Réservations */}
       {activeTab === 'reservations' && (
         <div className="space-y-6">
+          {/* Bouton de rafraîchissement */}
+          <div className="flex justify-end">
+            <button
+              onClick={() => {
+                console.log('[AdminDashboard] Rafraîchissement manuel des données...');
+                loadData();
+              }}
+              className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-light transition-colors text-sm font-medium flex items-center space-x-2"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              <span>Rafraîchir</span>
+            </button>
+          </div>
+
           {/* Demandes d'annulation en attente */}
-          {reservations.filter(r => r.status === 'pending_cancellation').length > 0 && (
+          {(() => {
+            const pendingCancellations = reservations.filter(r => r.status === 'pending_cancellation');
+            console.log('[AdminDashboard] Render - Demandes d\'annulation trouvées:', pendingCancellations.length);
+            if (pendingCancellations.length > 0) {
+              console.log('[AdminDashboard] Render - Détails:', pendingCancellations);
+            }
+            return pendingCancellations.length > 0;
+          })() ? (
             <div className="bg-yellow-50 border border-yellow-200 rounded-xl shadow-md p-6">
               <h3 className="text-lg font-semibold text-yellow-900 mb-4">
                 Demandes d'annulation en attente ({reservations.filter(r => r.status === 'pending_cancellation').length})
@@ -726,21 +847,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ userId }) => {
                         <button
                           onClick={async () => {
                             try {
-                              const { error } = await supabase
-                                .from('reservations')
-                                .update({ 
-                                  status: 'cancelled',
-                                  payment_status: 'refunded'
-                                })
-                                .eq('id', reservation.id);
-                              if (!error) {
-                                loadData();
-                                alert('Annulation approuvée et remboursement effectué');
-                              } else {
-                                alert('Erreur: ' + error.message);
+                              if (!userId) {
+                                alert('Erreur: ID utilisateur non trouvé');
+                                return;
                               }
+                              await reservationsService.approveCancellation(reservation.id, userId);
+                              loadData();
+                              alert('Annulation approuvée et remboursement effectué. Le voyageur a été notifié.');
                             } catch (error: any) {
-                              alert('Erreur: ' + error.message);
+                              alert('Erreur: ' + (error.message || 'Une erreur est survenue'));
                             }
                           }}
                           className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
@@ -750,20 +865,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ userId }) => {
                         <button
                           onClick={async () => {
                             try {
-                              const { error } = await supabase
-                                .from('reservations')
-                                .update({ 
-                                  status: reservation.status === 'pending_cancellation' ? 'confirmed' : reservation.status
-                                })
-                                .eq('id', reservation.id);
-                              if (!error) {
-                                loadData();
-                                alert('Demande d\'annulation refusée');
-                              } else {
-                                alert('Erreur: ' + error.message);
+                              if (!userId) {
+                                alert('Erreur: ID utilisateur non trouvé');
+                                return;
                               }
+                              const reason = prompt('Raison du rejet (optionnel):');
+                              await reservationsService.rejectCancellation(reservation.id, userId, reason || undefined);
+                              loadData();
+                              alert('Demande d\'annulation refusée. Le voyageur a été notifié.');
                             } catch (error: any) {
-                              alert('Erreur: ' + error.message);
+                              alert('Erreur: ' + (error.message || 'Une erreur est survenue'));
                             }
                           }}
                           className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm"
@@ -776,7 +887,50 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ userId }) => {
                 ))}
               </div>
             </div>
+          ) : (
+            <div className="bg-gray-50 border border-gray-200 rounded-xl shadow-md p-6">
+              <h3 className="text-lg font-semibold text-gray-700 mb-2">
+                Demandes d'annulation en attente
+              </h3>
+              <p className="text-sm text-gray-600">
+                Aucune demande d'annulation en attente pour le moment.
+              </p>
+              <p className="text-xs text-gray-500 mt-2">
+                Les demandes d'annulation apparaîtront ici lorsqu'un voyageur demandera l'annulation de sa réservation.
+              </p>
+            </div>
           )}
+
+          {/* Bouton de nettoyage automatique */}
+          <div className="bg-blue-50 border border-blue-200 rounded-xl shadow-md p-4 mb-6">
+            <div className="flex justify-between items-center">
+              <div>
+                <h3 className="text-lg font-semibold text-blue-900 mb-1">
+                  Nettoyage automatique
+                </h3>
+                <p className="text-sm text-blue-700">
+                  Supprimer automatiquement les réservations non confirmées ou payées après leur date de fin
+                </p>
+              </div>
+              <button
+                onClick={async () => {
+                  if (!confirm('Êtes-vous sûr de vouloir supprimer toutes les réservations expirées ?')) {
+                    return;
+                  }
+                  try {
+                    const result = await reservationsService.cleanupExpiredReservations();
+                    alert(result.message);
+                    loadData();
+                  } catch (error: any) {
+                    alert('Erreur lors du nettoyage: ' + (error.message || 'Une erreur est survenue'));
+                  }
+                }}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+              >
+                Nettoyer les réservations expirées
+              </button>
+            </div>
+          </div>
           
           <div className="bg-white rounded-xl shadow-md p-6">
             <ReservationsList

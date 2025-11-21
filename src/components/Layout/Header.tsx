@@ -240,7 +240,7 @@ const Header: React.FC<HeaderProps> = ({ currentUser: propCurrentUser, userType:
                   Connexion
                 </Link>
                 <Link
-                  to="/register"
+                  to="/traveler-register"
                   className="px-4 py-2 text-sm font-medium bg-primary text-white rounded-lg hover:bg-primary-light transition-all shadow-md"
                 >
                   Inscription

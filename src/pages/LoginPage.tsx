@@ -77,7 +77,7 @@ const LoginPage: React.FC = () => {
         <p className="mt-2 text-center text-sm text-secondary">
           Ou{' '}
           <Link
-            to="/register"
+            to="/traveler-register"
             className="font-medium text-primary hover:text-primary-light transition-colors"
           >
             créez un nouveau compte

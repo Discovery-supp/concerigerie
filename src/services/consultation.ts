@@ -40,16 +40,34 @@ class ConsultationService {
 
       // Créer une notification pour tous les admins / super_admins
       try {
-        const { data: admins, error: adminsError } = await supabase
-          .from('user_profiles')
-          .select('id')
-          .in('user_type', ['admin', 'super_admin']);
+        let adminIds: string[] = []
+        
+        // Utiliser la fonction SQL qui bypass RLS
+        const { data: adminData, error: functionError } = await supabase
+          .rpc('get_all_admin_ids')
 
-        if (adminsError) {
-          console.warn('Erreur lors du chargement des admins pour la notification de consultation:', adminsError);
-        } else if (admins && admins.length > 0) {
-          const notifications = admins.map((admin) => ({
-            user_id: admin.id,
+        if (!functionError && adminData && adminData.length > 0) {
+          adminIds = adminData.map((admin: any) => admin.admin_id)
+          console.log('[consultation] Admins trouvés via fonction SQL:', adminIds.length)
+        } else {
+          // Fallback: essayer la requête directe
+          console.warn('[consultation] Fonction SQL échouée, tentative requête directe:', functionError)
+          const { data: admins, error: adminsError } = await supabase
+            .from('user_profiles')
+            .select('id')
+            .in('user_type', ['admin', 'super_admin']);
+
+          if (adminsError) {
+            console.warn('Erreur lors du chargement des admins pour la notification de consultation:', adminsError);
+          } else if (admins && admins.length > 0) {
+            adminIds = admins.map(admin => admin.id)
+            console.log('[consultation] Admins trouvés via requête directe:', adminIds.length)
+          }
+        }
+
+        if (adminIds.length > 0) {
+          const notifications = adminIds.map((adminId) => ({
+            user_id: adminId,
             type: 'consultation_message',
             title: 'Nouveau message de contact',
             message: `Nouveau message de ${messageData.first_name} ${messageData.last_name} : "${messageData.subject}"`,
@@ -69,7 +87,11 @@ class ConsultationService {
 
           if (notifError) {
             console.warn('Erreur lors de la création des notifications admin (consultation):', notifError);
+          } else {
+            console.log('[consultation] Notifications créées pour', adminIds.length, 'admin(s)')
           }
+        } else {
+          console.warn('[consultation] Aucun admin trouvé pour envoyer les notifications')
         }
       } catch (notifException) {
         console.warn('Exception lors de la création des notifications admin (consultation):', notifException);

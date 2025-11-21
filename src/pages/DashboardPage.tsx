@@ -195,7 +195,7 @@ const DashboardPage: React.FC = () => {
             Votre profil n'est pas encore configuré.
           </p>
           <button
-            onClick={() => navigate('/register')}
+            onClick={() => navigate('/traveler-register')}
             className="px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary-light transition-colors"
           >
             Compléter mon profil
@@ -212,7 +212,7 @@ const DashboardPage: React.FC = () => {
             Le type d'utilisateur n'est pas défini. Veuillez compléter votre profil.
           </p>
           <button
-            onClick={() => navigate('/register')}
+            onClick={() => navigate('/traveler-register')}
             className="px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary-light transition-colors"
           >
             Compléter mon profil
@@ -288,7 +288,7 @@ const DashboardPage: React.FC = () => {
               Types valides : owner, provider, partner, admin, traveler
             </p>
             <button
-              onClick={() => navigate('/register')}
+              onClick={() => navigate('/traveler-register')}
               className="px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary-light transition-colors"
             >
               Compléter mon profil
