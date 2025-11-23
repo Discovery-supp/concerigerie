@@ -178,12 +178,15 @@ const ReviewsForm: React.FC<ReviewsFormProps> = ({
       // Charger les réservations pour les voyageurs (terminées ou confirmées avec check-out passé)
       if (userType === 'traveler') {
         const today = new Date().toISOString().split('T')[0];
+        
+        // Charger toutes les réservations confirmées ou terminées avec check-out passé
         const { data: reservationsData } = await supabase
           .from('reservations')
-          .select('id, property_id, check_in, check_out, status')
+          .select('id, property_id, check_in, check_out, status, total_amount, created_at')
           .eq('guest_id', user.id)
           .in('status', ['confirmed', 'completed'])
-          .lt('check_out', today); // Seulement les réservations avec check-out passé
+          .lt('check_out', today) // Seulement les réservations avec check-out passé
+          .order('check_out', { ascending: false }); // Plus récentes en premier
         
         // Vérifier quelles réservations ont déjà un avis
         if (reservationsData && reservationsData.length > 0) {
@@ -215,7 +218,33 @@ const ReviewsForm: React.FC<ReviewsFormProps> = ({
           const reviewedReservationIds = new Set(existingReviews?.map(r => r.reservation_id).filter(Boolean) || []);
           // Filtrer pour ne garder que les réservations sans avis
           const reservationsWithoutReview = reservationsData.filter(r => !reviewedReservationIds.has(r.id));
-          setReservations(reservationsWithoutReview);
+          
+          // Enrichir les réservations avec les détails des propriétés
+          if (reservationsWithoutReview.length > 0) {
+            const propertyIds = [...new Set(reservationsWithoutReview.map(r => r.property_id).filter(Boolean))];
+            
+            if (propertyIds.length > 0) {
+              const { data: propertiesData } = await supabase
+                .from('properties')
+                .select('id, title, address, images')
+                .in('id', propertyIds);
+              
+              if (propertiesData) {
+                const propertiesMap = new Map(propertiesData.map(p => [p.id, p]));
+                const enrichedReservations = reservationsWithoutReview.map(r => ({
+                  ...r,
+                  property: propertiesMap.get(r.property_id) || null
+                }));
+                setReservations(enrichedReservations);
+              } else {
+                setReservations(reservationsWithoutReview);
+              }
+            } else {
+              setReservations(reservationsWithoutReview);
+            }
+          } else {
+            setReservations([]);
+          }
         } else {
           setReservations([]);
         }
@@ -360,10 +389,12 @@ const ReviewsForm: React.FC<ReviewsFormProps> = ({
               Avis et commentaires
             </h2>
             <p className="text-gray-600">
-              Gérez les avis et commentaires des utilisateurs
+              {userType === 'traveler' 
+                ? 'Consultez vos avis et donnez votre avis sur vos séjours'
+                : 'Gérez les avis et commentaires des utilisateurs'}
             </p>
           </div>
-          {userType === 'traveler' && (
+          {userType === 'traveler' && reservations.length > 0 && (
             <button
               onClick={() => setShowReviewForm(true)}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center space-x-2"
@@ -440,6 +471,103 @@ const ReviewsForm: React.FC<ReviewsFormProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Réservations disponibles pour donner un avis (voyageur uniquement) */}
+      {userType === 'traveler' && reservations.length > 0 && (
+        <div className="bg-white p-6 rounded-lg shadow-sm border mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">
+                Réservations disponibles pour donner un avis
+              </h3>
+              <p className="text-sm text-gray-600 mt-1">
+                {reservations.length} réservation{reservations.length > 1 ? 's' : ''} en attente d'avis
+              </p>
+            </div>
+            <button
+              onClick={() => setShowReviewForm(true)}
+              className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-light transition-colors flex items-center space-x-2"
+            >
+              <Star className="w-4 h-4" />
+              <span>Donner un avis</span>
+            </button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {reservations.map((reservation: any) => {
+              const property = reservation.property;
+              return (
+                <div
+                  key={reservation.id}
+                  className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer"
+                  onClick={() => {
+                    setSelectedReservation(reservation.id);
+                    setShowReviewForm(true);
+                  }}
+                >
+                  {property?.images && Array.isArray(property.images) && property.images.length > 0 && (
+                    <div className="mb-3">
+                      <img
+                        src={typeof property.images[0] === 'string' ? property.images[0] : property.images[0]?.url || property.images[0]}
+                        alt={property.title}
+                        className="w-full h-32 object-cover rounded-lg"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = 'none';
+                        }}
+                      />
+                    </div>
+                  )}
+                  <h4 className="font-semibold text-gray-900 mb-1 flex items-center">
+                    <Home className="w-4 h-4 mr-1 text-gray-500" />
+                    {property?.title || 'Propriété'}
+                  </h4>
+                  {property?.address && (
+                    <p className="text-xs text-gray-500 mb-2">{property.address}</p>
+                  )}
+                  <div className="flex items-center space-x-3 text-sm text-gray-600 mb-2">
+                    <span className="flex items-center">
+                      <Calendar className="w-3 h-3 mr-1" />
+                      {new Date(reservation.check_in).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} - {new Date(reservation.check_out).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
+                    </span>
+                  </div>
+                  {reservation.total_amount && (
+                    <p className="text-sm font-medium text-gray-900">
+                      ${Number(reservation.total_amount).toFixed(2)}
+                    </p>
+                  )}
+                  <button
+                    className="mt-3 w-full px-3 py-2 bg-primary text-white rounded-lg hover:bg-primary-light transition-colors text-sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedReservation(reservation.id);
+                      setShowReviewForm(true);
+                    }}
+                  >
+                    Donner un avis
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Message si aucune réservation disponible */}
+      {userType === 'traveler' && reservations.length === 0 && !loading && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-6">
+          <div className="flex items-start space-x-3">
+            <Calendar className="w-5 h-5 text-blue-600 mt-0.5" />
+            <div>
+              <h4 className="font-semibold text-blue-900 mb-1">
+                Aucune réservation disponible pour donner un avis
+              </h4>
+              <p className="text-sm text-blue-700">
+                Vous pouvez donner un avis uniquement pour les réservations terminées (check-out passé). 
+                Une fois votre séjour terminé, vous pourrez partager votre expérience.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Filtres */}
       <div className="bg-white p-6 rounded-lg shadow-sm border mb-6">
@@ -576,20 +704,71 @@ const ReviewsForm: React.FC<ReviewsFormProps> = ({
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Sélectionner une réservation *
                   </label>
-                  <select
-                    value={selectedReservation}
-                    onChange={(e) => setSelectedReservation(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required
-                  >
-                    <option value="">Choisir une réservation</option>
-                    {reservations.map(reservation => (
-                      <option key={reservation.id} value={reservation.id}>
-                        Réservation #{reservation.id.slice(-8)} - 
-                        {new Date(reservation.check_in).toLocaleDateString('fr-FR')} au {new Date(reservation.check_out).toLocaleDateString('fr-FR')}
-                      </option>
-                    ))}
-                  </select>
+                  {reservations.length === 0 ? (
+                    <div className="p-4 bg-gray-50 border border-gray-200 rounded-md text-center">
+                      <Calendar className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                      <p className="text-sm text-gray-600">
+                        Aucune réservation disponible pour donner un avis.
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Vous pouvez donner un avis uniquement pour les réservations terminées (check-out passé).
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-60 overflow-y-auto border border-gray-200 rounded-md p-2">
+                      {reservations.map(reservation => {
+                        const reservationWithProperty = reservation as any;
+                        const property = reservationWithProperty.property;
+                        return (
+                          <label
+                            key={reservation.id}
+                            className={`block p-3 border rounded-lg cursor-pointer transition-all ${
+                              selectedReservation === reservation.id
+                                ? 'border-primary bg-primary/5'
+                                : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name="reservation"
+                              value={reservation.id}
+                              checked={selectedReservation === reservation.id}
+                              onChange={(e) => setSelectedReservation(e.target.value)}
+                              className="sr-only"
+                            />
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <div className="flex items-center space-x-2 mb-1">
+                                  <Home className="w-4 h-4 text-gray-500" />
+                                  <span className="font-semibold text-gray-900">
+                                    {property?.title || 'Propriété'}
+                                  </span>
+                                </div>
+                                {property?.address && (
+                                  <p className="text-xs text-gray-500 mb-2">{property.address}</p>
+                                )}
+                                <div className="flex items-center space-x-4 text-sm text-gray-600">
+                                  <span className="flex items-center">
+                                    <Calendar className="w-3 h-3 mr-1" />
+                                    {new Date(reservation.check_in).toLocaleDateString('fr-FR')} - {new Date(reservation.check_out).toLocaleDateString('fr-FR')}
+                                  </span>
+                                  {reservationWithProperty.total_amount && (
+                                    <span className="flex items-center">
+                                      <span className="mr-1">$</span>
+                                      {Number(reservationWithProperty.total_amount).toFixed(2)}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              {selectedReservation === reservation.id && (
+                                <CheckCircle className="w-5 h-5 text-primary flex-shrink-0 ml-2" />
+                              )}
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
 
                 <div>
