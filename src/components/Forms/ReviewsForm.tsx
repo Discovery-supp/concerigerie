@@ -56,10 +56,12 @@ const ReviewsForm: React.FC<ReviewsFormProps> = ({
     rating: 0,
     comment: '',
     aspects: {
-      property: 0,        // Note sur la propriété
-      arrival: 0,         // Note sur l'arrivée
-      welcome: 0,         // Note sur l'accueil
-      communication: 0    // Note sur la communication
+      cleanliness: 0,
+      communication: 0,
+      checkin: 0,
+      accuracy: 0,
+      location: 0,
+      value: 0
     }
   });
   const [filterProperty, setFilterProperty] = useState('');
@@ -78,7 +80,12 @@ const ReviewsForm: React.FC<ReviewsFormProps> = ({
       // Charger les avis selon le type d'utilisateur
       let reviewsQuery = supabase
         .from('reviews')
-        .select('*');
+        .select(`
+          *,
+          user_profiles!reviews_guest_id_fkey(first_name, last_name),
+          properties!reviews_property_id_fkey(title, address),
+          reservations!reviews_reservation_id_fkey(check_in, check_out)
+        `);
 
       if (userType === 'owner') {
         // Charger les avis des propriétés de l'utilisateur
@@ -101,65 +108,7 @@ const ReviewsForm: React.FC<ReviewsFormProps> = ({
       const { data: reviewsData, error } = await reviewsQuery;
       if (error) throw error;
 
-      let enrichedReviews = reviewsData || [];
-      if (enrichedReviews.length > 0) {
-        const reviewerIds = [...new Set(enrichedReviews.map(review => review.reviewer_id || review.guest_id).filter(Boolean))];
-        const propertyIds = [...new Set(enrichedReviews.map(review => review.property_id).filter(Boolean))];
-        const reservationIds = [...new Set(enrichedReviews.map(review => review.reservation_id).filter(Boolean))];
-
-        if (reviewerIds.length > 0) {
-          const { data: reviewers } = await supabase
-            .from('user_profiles')
-            .select('id, first_name, last_name')
-            .in('id', reviewerIds);
-
-          if (reviewers) {
-            const reviewersMap = new Map(reviewers.map(reviewer => [reviewer.id, reviewer]));
-            enrichedReviews = enrichedReviews.map(review => ({
-              ...review,
-              guest_name: (() => {
-                const reviewer = reviewersMap.get(review.reviewer_id || review.guest_id);
-                return reviewer ? `${reviewer.first_name || ''} ${reviewer.last_name || ''}`.trim() : review.guest_name;
-              })()
-            }));
-          }
-        }
-
-        if (propertyIds.length > 0) {
-          const { data: properties } = await supabase
-            .from('properties')
-            .select('id, title, address')
-            .in('id', propertyIds);
-
-          if (properties) {
-            const propertiesMap = new Map(properties.map(property => [property.id, property]));
-            enrichedReviews = enrichedReviews.map(review => ({
-              ...review,
-              property_title: propertiesMap.get(review.property_id)?.title || review.property_title
-            }));
-          }
-        }
-
-        if (reservationIds.length > 0) {
-          const { data: reservationsData } = await supabase
-            .from('reservations')
-            .select('id, check_in, check_out')
-            .in('id', reservationIds);
-
-          if (reservationsData) {
-            const reservationsMap = new Map(reservationsData.map(reservation => [reservation.id, reservation]));
-            enrichedReviews = enrichedReviews.map(review => ({
-              ...review,
-              reservation_dates: review.reservation_id ? {
-                check_in: reservationsMap.get(review.reservation_id)?.check_in,
-                check_out: reservationsMap.get(review.reservation_id)?.check_out
-              } : review.reservation_dates
-            }));
-          }
-        }
-      }
-
-      setReviews(enrichedReviews);
+      setReviews(reviewsData || []);
 
       // Charger les propriétés pour les filtres
       if (userType === 'owner') {
@@ -175,79 +124,14 @@ const ReviewsForm: React.FC<ReviewsFormProps> = ({
         setProperties(propertiesData || []);
       }
 
-      // Charger les réservations pour les voyageurs (terminées ou confirmées avec check-out passé)
+      // Charger les réservations pour les voyageurs
       if (userType === 'traveler') {
-        const today = new Date().toISOString().split('T')[0];
-        
-        // Charger toutes les réservations confirmées ou terminées avec check-out passé
         const { data: reservationsData } = await supabase
           .from('reservations')
-          .select('id, property_id, check_in, check_out, status, total_amount, created_at')
+          .select('id, property_id, check_in, check_out, status')
           .eq('guest_id', user.id)
-          .in('status', ['confirmed', 'completed'])
-          .lt('check_out', today) // Seulement les réservations avec check-out passé
-          .order('check_out', { ascending: false }); // Plus récentes en premier
-        
-        // Vérifier quelles réservations ont déjà un avis
-        if (reservationsData && reservationsData.length > 0) {
-          const reservationIds = reservationsData.map(r => r.id);
-          // Essayer avec reviewer_id d'abord, puis guest_id si nécessaire
-          let existingReviews: any[] = [];
-          
-          const { data: reviews1 } = await supabase
-            .from('reviews')
-            .select('reservation_id, property_id')
-            .in('reservation_id', reservationIds)
-            .eq('reviewer_id', user.id);
-          
-          if (reviews1 && reviews1.length > 0) {
-            existingReviews = reviews1;
-          } else {
-            // Essayer avec guest_id
-            const { data: reviews2 } = await supabase
-              .from('reviews')
-              .select('reservation_id, property_id')
-              .in('reservation_id', reservationIds)
-              .eq('guest_id', user.id);
-            
-            if (reviews2) {
-              existingReviews = reviews2;
-            }
-          }
-          
-          const reviewedReservationIds = new Set(existingReviews?.map(r => r.reservation_id).filter(Boolean) || []);
-          // Filtrer pour ne garder que les réservations sans avis
-          const reservationsWithoutReview = reservationsData.filter(r => !reviewedReservationIds.has(r.id));
-          
-          // Enrichir les réservations avec les détails des propriétés
-          if (reservationsWithoutReview.length > 0) {
-            const propertyIds = [...new Set(reservationsWithoutReview.map(r => r.property_id).filter(Boolean))];
-            
-            if (propertyIds.length > 0) {
-              const { data: propertiesData } = await supabase
-                .from('properties')
-                .select('id, title, address, images')
-                .in('id', propertyIds);
-              
-              if (propertiesData) {
-                const propertiesMap = new Map(propertiesData.map(p => [p.id, p]));
-                const enrichedReservations = reservationsWithoutReview.map(r => ({
-                  ...r,
-                  property: propertiesMap.get(r.property_id) || null
-                }));
-                setReservations(enrichedReservations);
-              } else {
-                setReservations(reservationsWithoutReview);
-              }
-            } else {
-              setReservations(reservationsWithoutReview);
-            }
-          } else {
-            setReservations([]);
-          }
-        } else {
-          setReservations([]);
-        }
+          .eq('status', 'completed');
+        setReservations(reservationsData || []);
       }
 
     } catch (error) {
@@ -269,36 +153,15 @@ const ReviewsForm: React.FC<ReviewsFormProps> = ({
       const reservation = reservations.find(r => r.id === selectedReservation);
       if (!reservation) return;
 
-      // Vérifier la structure de la table reviews (peut être reviewer_id ou guest_id)
-      const reviewData: any = {
-        reservation_id: selectedReservation,
-        property_id: reservation.property_id,
-        rating: newReview.rating,
-        comment: newReview.comment || ''
-      };
-
-      // Essayer avec reviewer_id d'abord (structure la plus récente), puis guest_id
-      // Supabase ignorera les colonnes qui n'existent pas
-      reviewData.reviewer_id = user.id;
-      reviewData.guest_id = user.id;
-      
-      // Ajouter les notes détaillées spécifiques
-      if (newReview.aspects.property > 0) {
-        reviewData.accuracy_rating = newReview.aspects.property; // Utiliser accuracy_rating pour la propriété
-      }
-      if (newReview.aspects.arrival > 0) {
-        reviewData.checkin_rating = newReview.aspects.arrival; // Utiliser checkin_rating pour l'arrivée
-      }
-      if (newReview.aspects.welcome > 0) {
-        reviewData.cleanliness_rating = newReview.aspects.welcome; // Utiliser cleanliness_rating pour l'accueil
-      }
-      if (newReview.aspects.communication > 0) {
-        reviewData.communication_rating = newReview.aspects.communication;
-      }
-
       const { error } = await supabase
         .from('reviews')
-        .insert([reviewData]);
+        .insert([{
+          reservation_id: selectedReservation,
+          property_id: reservation.property_id,
+          guest_id: user.id,
+          rating: newReview.rating,
+          comment: newReview.comment
+        }]);
 
       if (error) throw error;
 
@@ -306,10 +169,12 @@ const ReviewsForm: React.FC<ReviewsFormProps> = ({
         rating: 0,
         comment: '',
         aspects: {
-          property: 0,
-          arrival: 0,
-          welcome: 0,
-          communication: 0
+          cleanliness: 0,
+          communication: 0,
+          checkin: 0,
+          accuracy: 0,
+          location: 0,
+          value: 0
         }
       });
       setSelectedReservation('');
@@ -389,12 +254,10 @@ const ReviewsForm: React.FC<ReviewsFormProps> = ({
               Avis et commentaires
             </h2>
             <p className="text-gray-600">
-              {userType === 'traveler' 
-                ? 'Consultez vos avis et donnez votre avis sur vos séjours'
-                : 'Gérez les avis et commentaires des utilisateurs'}
+              Gérez les avis et commentaires des utilisateurs
             </p>
           </div>
-          {userType === 'traveler' && reservations.length > 0 && (
+          {userType === 'traveler' && (
             <button
               onClick={() => setShowReviewForm(true)}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center space-x-2"
@@ -471,103 +334,6 @@ const ReviewsForm: React.FC<ReviewsFormProps> = ({
           </div>
         </div>
       </div>
-
-      {/* Réservations disponibles pour donner un avis (voyageur uniquement) */}
-      {userType === 'traveler' && reservations.length > 0 && (
-        <div className="bg-white p-6 rounded-lg shadow-sm border mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">
-                Réservations disponibles pour donner un avis
-              </h3>
-              <p className="text-sm text-gray-600 mt-1">
-                {reservations.length} réservation{reservations.length > 1 ? 's' : ''} en attente d'avis
-              </p>
-            </div>
-            <button
-              onClick={() => setShowReviewForm(true)}
-              className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-light transition-colors flex items-center space-x-2"
-            >
-              <Star className="w-4 h-4" />
-              <span>Donner un avis</span>
-            </button>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {reservations.map((reservation: any) => {
-              const property = reservation.property;
-              return (
-                <div
-                  key={reservation.id}
-                  className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer"
-                  onClick={() => {
-                    setSelectedReservation(reservation.id);
-                    setShowReviewForm(true);
-                  }}
-                >
-                  {property?.images && Array.isArray(property.images) && property.images.length > 0 && (
-                    <div className="mb-3">
-                      <img
-                        src={typeof property.images[0] === 'string' ? property.images[0] : property.images[0]?.url || property.images[0]}
-                        alt={property.title}
-                        className="w-full h-32 object-cover rounded-lg"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = 'none';
-                        }}
-                      />
-                    </div>
-                  )}
-                  <h4 className="font-semibold text-gray-900 mb-1 flex items-center">
-                    <Home className="w-4 h-4 mr-1 text-gray-500" />
-                    {property?.title || 'Propriété'}
-                  </h4>
-                  {property?.address && (
-                    <p className="text-xs text-gray-500 mb-2">{property.address}</p>
-                  )}
-                  <div className="flex items-center space-x-3 text-sm text-gray-600 mb-2">
-                    <span className="flex items-center">
-                      <Calendar className="w-3 h-3 mr-1" />
-                      {new Date(reservation.check_in).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} - {new Date(reservation.check_out).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
-                    </span>
-                  </div>
-                  {reservation.total_amount && (
-                    <p className="text-sm font-medium text-gray-900">
-                      ${Number(reservation.total_amount).toFixed(2)}
-                    </p>
-                  )}
-                  <button
-                    className="mt-3 w-full px-3 py-2 bg-primary text-white rounded-lg hover:bg-primary-light transition-colors text-sm"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSelectedReservation(reservation.id);
-                      setShowReviewForm(true);
-                    }}
-                  >
-                    Donner un avis
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Message si aucune réservation disponible */}
-      {userType === 'traveler' && reservations.length === 0 && !loading && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-6">
-          <div className="flex items-start space-x-3">
-            <Calendar className="w-5 h-5 text-blue-600 mt-0.5" />
-            <div>
-              <h4 className="font-semibold text-blue-900 mb-1">
-                Aucune réservation disponible pour donner un avis
-              </h4>
-              <p className="text-sm text-blue-700">
-                Vous pouvez donner un avis uniquement pour les réservations terminées (check-out passé). 
-                Une fois votre séjour terminé, vous pourrez partager votre expérience.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Filtres */}
       <div className="bg-white p-6 rounded-lg shadow-sm border mb-6">
@@ -704,71 +470,20 @@ const ReviewsForm: React.FC<ReviewsFormProps> = ({
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Sélectionner une réservation *
                   </label>
-                  {reservations.length === 0 ? (
-                    <div className="p-4 bg-gray-50 border border-gray-200 rounded-md text-center">
-                      <Calendar className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                      <p className="text-sm text-gray-600">
-                        Aucune réservation disponible pour donner un avis.
-                      </p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        Vous pouvez donner un avis uniquement pour les réservations terminées (check-out passé).
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="space-y-2 max-h-60 overflow-y-auto border border-gray-200 rounded-md p-2">
-                      {reservations.map(reservation => {
-                        const reservationWithProperty = reservation as any;
-                        const property = reservationWithProperty.property;
-                        return (
-                          <label
-                            key={reservation.id}
-                            className={`block p-3 border rounded-lg cursor-pointer transition-all ${
-                              selectedReservation === reservation.id
-                                ? 'border-primary bg-primary/5'
-                                : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                            }`}
-                          >
-                            <input
-                              type="radio"
-                              name="reservation"
-                              value={reservation.id}
-                              checked={selectedReservation === reservation.id}
-                              onChange={(e) => setSelectedReservation(e.target.value)}
-                              className="sr-only"
-                            />
-                            <div className="flex items-start justify-between">
-                              <div className="flex-1">
-                                <div className="flex items-center space-x-2 mb-1">
-                                  <Home className="w-4 h-4 text-gray-500" />
-                                  <span className="font-semibold text-gray-900">
-                                    {property?.title || 'Propriété'}
-                                  </span>
-                                </div>
-                                {property?.address && (
-                                  <p className="text-xs text-gray-500 mb-2">{property.address}</p>
-                                )}
-                                <div className="flex items-center space-x-4 text-sm text-gray-600">
-                                  <span className="flex items-center">
-                                    <Calendar className="w-3 h-3 mr-1" />
-                                    {new Date(reservation.check_in).toLocaleDateString('fr-FR')} - {new Date(reservation.check_out).toLocaleDateString('fr-FR')}
-                                  </span>
-                                  {reservationWithProperty.total_amount && (
-                                    <span className="flex items-center">
-                                      <span className="mr-1">$</span>
-                                      {Number(reservationWithProperty.total_amount).toFixed(2)}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                              {selectedReservation === reservation.id && (
-                                <CheckCircle className="w-5 h-5 text-primary flex-shrink-0 ml-2" />
-                              )}
-                            </div>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  )}
+                  <select
+                    value={selectedReservation}
+                    onChange={(e) => setSelectedReservation(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  >
+                    <option value="">Choisir une réservation</option>
+                    {reservations.map(reservation => (
+                      <option key={reservation.id} value={reservation.id}>
+                        Réservation #{reservation.id.slice(-8)} - 
+                        {new Date(reservation.check_in).toLocaleDateString('fr-FR')} au {new Date(reservation.check_out).toLocaleDateString('fr-FR')}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>
@@ -785,85 +500,6 @@ const ReviewsForm: React.FC<ReviewsFormProps> = ({
                   </div>
                 </div>
 
-                {/* Évaluations détaillées */}
-                <div className="space-y-4 border-t pt-4">
-                  <h4 className="text-sm font-semibold text-gray-700 mb-3">
-                    Évaluations détaillées (optionnel)
-                  </h4>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      La propriété *
-                    </label>
-                    <div className="flex items-center space-x-2">
-                      {getRatingStars(newReview.aspects.property, true, (rating) => 
-                        setNewReview(prev => ({ 
-                          ...prev, 
-                          aspects: { ...prev.aspects, property: rating }
-                        }))
-                      )}
-                      <span className="text-sm text-gray-500 ml-2">
-                        {newReview.aspects.property > 0 && `${newReview.aspects.property}/5`}
-                      </span>
-                    </div>
-                    <p className="text-xs text-gray-500 mt-1">Qualité et état de la propriété</p>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      L'arrivée *
-                    </label>
-                    <div className="flex items-center space-x-2">
-                      {getRatingStars(newReview.aspects.arrival, true, (rating) => 
-                        setNewReview(prev => ({ 
-                          ...prev, 
-                          aspects: { ...prev.aspects, arrival: rating }
-                        }))
-                      )}
-                      <span className="text-sm text-gray-500 ml-2">
-                        {newReview.aspects.arrival > 0 && `${newReview.aspects.arrival}/5`}
-                      </span>
-                    </div>
-                    <p className="text-xs text-gray-500 mt-1">Processus d'arrivée et remise des clés</p>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      L'accueil *
-                    </label>
-                    <div className="flex items-center space-x-2">
-                      {getRatingStars(newReview.aspects.welcome, true, (rating) => 
-                        setNewReview(prev => ({ 
-                          ...prev, 
-                          aspects: { ...prev.aspects, welcome: rating }
-                        }))
-                      )}
-                      <span className="text-sm text-gray-500 ml-2">
-                        {newReview.aspects.welcome > 0 && `${newReview.aspects.welcome}/5`}
-                      </span>
-                    </div>
-                    <p className="text-xs text-gray-500 mt-1">Qualité de l'accueil de l'hôte</p>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      La communication *
-                    </label>
-                    <div className="flex items-center space-x-2">
-                      {getRatingStars(newReview.aspects.communication, true, (rating) => 
-                        setNewReview(prev => ({ 
-                          ...prev, 
-                          aspects: { ...prev.aspects, communication: rating }
-                        }))
-                      )}
-                      <span className="text-sm text-gray-500 ml-2">
-                        {newReview.aspects.communication > 0 && `${newReview.aspects.communication}/5`}
-                      </span>
-                    </div>
-                    <p className="text-xs text-gray-500 mt-1">Réactivité et qualité de la communication</p>
-                  </div>
-                </div>
-
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Commentaire
@@ -873,7 +509,7 @@ const ReviewsForm: React.FC<ReviewsFormProps> = ({
                     onChange={(e) => setNewReview(prev => ({ ...prev, comment: e.target.value }))}
                     rows={4}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Partagez votre expérience détaillée..."
+                    placeholder="Partagez votre expérience..."
                   />
                 </div>
 
@@ -887,11 +523,7 @@ const ReviewsForm: React.FC<ReviewsFormProps> = ({
                   </button>
                   <button
                     type="submit"
-                    disabled={newReview.rating === 0 || 
-                             newReview.aspects.property === 0 || 
-                             newReview.aspects.arrival === 0 || 
-                             newReview.aspects.welcome === 0 || 
-                             newReview.aspects.communication === 0}
+                    disabled={newReview.rating === 0}
                     className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Publier l'avis

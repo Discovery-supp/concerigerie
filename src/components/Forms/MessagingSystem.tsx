@@ -61,40 +61,13 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
     loadCurrentUser();
     loadConversations();
     loadAvailableUsers();
-  }, [userType]); // Recharger quand userType change
+  }, []);
 
   useEffect(() => {
     if (selectedConversation) {
       loadMessages(selectedConversation);
     }
   }, [selectedConversation]);
-
-  // Recharger les utilisateurs quand le modal s'ouvre pour tous les types d'utilisateurs
-  useEffect(() => {
-    if (showNewMessage) {
-      console.log('[MessagingSystem] Modal ouvert, rechargement des utilisateurs pour', userType);
-      loadAvailableUsers();
-    }
-  }, [showNewMessage, userType]);
-
-  // Pré-sélectionner automatiquement l'administrateur pour les voyageurs uniquement
-  useEffect(() => {
-    if (showNewMessage && userType === 'traveler' && availableUsers.length > 0 && !selectedReceiverId) {
-      // Si un seul administrateur, le sélectionner automatiquement
-      if (availableUsers.length === 1) {
-        const admin = availableUsers[0];
-        setSelectedReceiverId(admin.id);
-        setSearchQuery(`${admin.first_name} ${admin.last_name}`);
-        console.log('[MessagingSystem] Administrateur pré-sélectionné automatiquement:', admin);
-      } else if (availableUsers.length > 1) {
-        // Si plusieurs administrateurs, sélectionner le premier par défaut
-        const firstAdmin = availableUsers[0];
-        setSelectedReceiverId(firstAdmin.id);
-        setSearchQuery(`${firstAdmin.first_name} ${firstAdmin.last_name}`);
-        console.log('[MessagingSystem] Premier administrateur pré-sélectionné:', firstAdmin);
-      }
-    }
-  }, [showNewMessage, userType, availableUsers, selectedReceiverId]);
 
   const loadCurrentUser = async () => {
     try {
@@ -115,53 +88,15 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
   const loadAvailableUsers = async () => {
     setLoadingUsers(true);
     try {
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-      if (authError) {
-        console.error('[MessagingSystem] Erreur authentification:', authError);
-        setAvailableUsers([]);
-        return;
-      }
-      if (!user) {
-        console.log('[MessagingSystem] Aucun utilisateur connecté');
-        setAvailableUsers([]);
-        return;
-      }
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
 
-      console.log('[MessagingSystem] Utilisateur connecté:', user.id);
-      console.log('[MessagingSystem] Chargement des utilisateurs disponibles pour userType:', userType);
-
-      // D'abord, vérifier le profil de l'utilisateur actuel
-      const { data: currentProfile, error: profileError } = await supabase
+      // Récupérer le type d'utilisateur actuel
+      const { data: currentProfile } = await supabase
         .from('user_profiles')
-        .select('id, user_type, first_name, last_name')
+        .select('user_type')
         .eq('id', user.id)
         .single();
-
-      if (profileError) {
-        console.error('[MessagingSystem] Erreur récupération profil actuel:', profileError);
-      } else {
-        console.log('[MessagingSystem] Profil actuel:', currentProfile);
-      }
-
-      // Test direct: essayer de charger TOUS les utilisateurs sans filtre pour vérifier l'accès RLS
-      console.log('[MessagingSystem] Test: Chargement de tous les utilisateurs (sans filtre)...');
-      const { data: allUsersTest, error: testError } = await supabase
-        .from('user_profiles')
-        .select('id, first_name, last_name, user_type, email')
-        .limit(10);
-      
-      if (testError) {
-        console.error('[MessagingSystem] ERREUR RLS: Impossible de charger les utilisateurs:', testError);
-        console.error('[MessagingSystem] Code erreur:', testError.code);
-        console.error('[MessagingSystem] Message:', testError.message);
-        console.error('[MessagingSystem] Détails:', testError.details);
-        console.error('[MessagingSystem] Hint:', testError.hint);
-      } else {
-        console.log('[MessagingSystem] Test réussi: Nombre d\'utilisateurs trouvés:', allUsersTest?.length || 0);
-        if (allUsersTest && allUsersTest.length > 0) {
-          console.log('[MessagingSystem] Exemple d\'utilisateurs:', allUsersTest.slice(0, 3));
-        }
-      }
 
       let query = supabase
         .from('user_profiles')
@@ -170,134 +105,22 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
 
       // Logique de communication selon les règles métier
       if (userType === 'owner') {
-        // Les hôtes peuvent communiquer avec tout le monde
-        // Pas de restriction
-        console.log('[MessagingSystem] Pas de restriction pour owner - peut communiquer avec tout le monde');
+        // Les hôtes ne peuvent communiquer qu'avec l'admin
+        query = query.in('user_type', ['admin', 'super_admin']);
       } else if (userType === 'traveler') {
         // Les voyageurs ne communiquent qu'avec l'admin
         query = query.in('user_type', ['admin', 'super_admin']);
-        console.log('[MessagingSystem] Filtrage pour traveler: admin et super_admin uniquement');
       } else if (userType === 'admin' || userType === 'super_admin') {
         // Les admins peuvent communiquer avec tout le monde
         // Pas de restriction
-        console.log('[MessagingSystem] Pas de restriction pour admin/super_admin');
       }
 
-      console.log('[MessagingSystem] Exécution de la requête...');
-      
-      // Pour les hôtes, forcer le rechargement en ajoutant un petit délai et en vérifiant plusieurs fois
-      let users: any[] | null = null;
-      let error: any = null;
-      let attempts = 0;
-      const maxAttempts = 3;
-      
-      while (attempts < maxAttempts && !users && !error) {
-        attempts++;
-        console.log(`[MessagingSystem] Tentative ${attempts}/${maxAttempts}...`);
-        
-        const result = await query.order('first_name', { ascending: true });
-        users = result.data;
-        error = result.error;
-        
-        if (error) {
-          console.error(`[MessagingSystem] Erreur tentative ${attempts}:`, error);
-          if (attempts < maxAttempts) {
-            // Attendre un peu avant de réessayer
-            await new Promise(resolve => setTimeout(resolve, 500));
-            // Recréer la requête pour la nouvelle tentative
-            query = supabase
-              .from('user_profiles')
-              .select('id, first_name, last_name, user_type, email')
-              .neq('id', user.id);
-            if (userType === 'traveler') {
-              query = query.in('user_type', ['admin', 'super_admin']);
-            }
-          }
-        } else if (users && users.length > 0) {
-          console.log(`[MessagingSystem] Succès à la tentative ${attempts}, ${users.length} utilisateurs chargés`);
-          break;
-        }
-      }
+      const { data: users, error } = await query.order('first_name', { ascending: true });
 
-      if (error) {
-        console.error('[MessagingSystem] Erreur finale après toutes les tentatives:', error);
-        console.error('[MessagingSystem] Code erreur:', error.code);
-        console.error('[MessagingSystem] Message erreur:', error.message);
-        console.error('[MessagingSystem] Détails de l\'erreur:', JSON.stringify(error, null, 2));
-        
-        // Si c'est une erreur RLS, essayer une approche alternative
-        if (error.code === '42501' || error.message?.includes('permission denied') || error.message?.includes('policy')) {
-          console.warn('[MessagingSystem] Erreur RLS détectée, tentative avec une requête plus simple...');
-          // Essayer de charger au moins les admins
-          const { data: adminUsers, error: adminError } = await supabase
-            .from('user_profiles')
-            .select('id, first_name, last_name, user_type, email')
-            .in('user_type', ['admin', 'super_admin'])
-            .neq('id', user.id);
-          
-          if (!adminError && adminUsers) {
-            console.log('[MessagingSystem] Admins chargés en fallback:', adminUsers.length);
-            setAvailableUsers(adminUsers);
-            return;
-          }
-        }
-        
-        setAvailableUsers([]);
-        return;
-      }
-
-      console.log('[MessagingSystem] Utilisateurs disponibles chargés:', users?.length || 0);
-      if (users && users.length > 0) {
-        console.log('[MessagingSystem] Liste des utilisateurs:', users);
-        setAvailableUsers(users);
-      } else {
-        console.warn('[MessagingSystem] Aucun utilisateur retourné par la requête');
-        console.warn('[MessagingSystem] userType:', userType);
-        console.warn('[MessagingSystem] User ID:', user.id);
-        
-        // Essayer une requête de test simple pour vérifier l'accès
-        const { data: testUsers, error: testError } = await supabase
-          .from('user_profiles')
-          .select('id, first_name, last_name, user_type')
-          .limit(5);
-        console.log('[MessagingSystem] Test requête simple - erreur:', testError);
-        console.log('[MessagingSystem] Test requête simple - résultat:', testUsers);
-        
-        // Si le test fonctionne mais la requête principale ne fonctionne pas,
-        // essayer sans le filtre .neq()
-        if (!testError && testUsers && testUsers.length > 0) {
-          console.log('[MessagingSystem] La requête de test fonctionne, problème avec le filtre .neq()');
-          // Réessayer sans le filtre .neq() et filtrer manuellement
-          const { data: allUsers, error: allError } = await supabase
-            .from('user_profiles')
-            .select('id, first_name, last_name, user_type, email')
-            .order('first_name', { ascending: true });
-          
-          if (!allError && allUsers) {
-            // Filtrer manuellement pour exclure l'utilisateur actuel
-            const filteredUsers = allUsers.filter(u => u.id !== user.id);
-            // Appliquer le filtre selon le type d'utilisateur
-            let finalUsers = filteredUsers;
-            if (userType === 'traveler') {
-              finalUsers = filteredUsers.filter(u => u.user_type === 'admin' || u.user_type === 'super_admin');
-            }
-            console.log('[MessagingSystem] Utilisateurs filtrés manuellement:', finalUsers.length);
-            setAvailableUsers(finalUsers);
-            return;
-          }
-        }
-        
-        setAvailableUsers([]);
-      }
-      
-      // Si aucun utilisateur trouvé pour les voyageurs, afficher un message
-      if (userType === 'traveler' && (!users || users.length === 0)) {
-        console.warn('[MessagingSystem] Aucun administrateur trouvé pour le voyageur');
-      }
+      if (error) throw error;
+      setAvailableUsers(users || []);
     } catch (error) {
-      console.error('[MessagingSystem] Erreur chargement utilisateurs (catch):', error);
-      console.error('[MessagingSystem] Stack trace:', (error as Error)?.stack);
-      setAvailableUsers([]);
+      console.error('Erreur chargement utilisateurs:', error);
     } finally {
       setLoadingUsers(false);
     }
@@ -318,79 +141,57 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
 
       let query = supabase
         .from('messages')
-        .select('*')
+        .select(`
+          *,
+          sender:user_profiles!sender_id(first_name, last_name, user_type),
+          receiver:user_profiles!receiver_id(first_name, last_name, user_type)
+        `)
         .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`);
 
       // Filtrer selon les règles de communication
-      // Les hôtes voient toutes leurs conversations (pas de filtre)
-      if (userType === 'traveler') {
+      if (userType === 'owner') {
+        // Les hôtes ne voient que les conversations avec admin
+        // Le filtrage se fera après récupération
+      } else if (userType === 'traveler') {
         // Les voyageurs ne voient que les conversations avec admin
         // Le filtrage se fera après récupération
       }
 
       const { data: conversationsData, error } = await query.order('created_at', { ascending: false });
 
-      if (error) {
-        console.error('Erreur chargement conversations:', error);
-        throw error;
-      }
-
-      // Récupérer tous les IDs uniques des utilisateurs (senders et receivers)
-      const userIds = new Set<string>();
-      conversationsData?.forEach((message: any) => {
-        if (message.sender_id) userIds.add(message.sender_id);
-        if (message.receiver_id) userIds.add(message.receiver_id);
-      });
-
-      // Récupérer les profils des utilisateurs
-      let userProfilesMap = new Map();
-      if (userIds.size > 0) {
-        const { data: profiles } = await supabase
-          .from('user_profiles')
-          .select('id, first_name, last_name, user_type')
-          .in('id', Array.from(userIds));
-
-        profiles?.forEach(profile => {
-          userProfilesMap.set(profile.id, profile);
-        });
-      }
+      if (error) throw error;
 
       // Grouper les messages par conversation
       const conversationMap = new Map<string, Conversation>();
       
       conversationsData?.forEach((message: any) => {
-        const senderProfile = userProfilesMap.get(message.sender_id);
-        const receiverProfile = userProfilesMap.get(message.receiver_id);
-
         // Vérifier que sender et receiver existent
-        if (!senderProfile || !receiverProfile) {
+        if (!message.sender || !message.receiver) {
           console.warn('Message avec sender ou receiver manquant:', message);
           return;
         }
 
         const otherUserId = message.sender_id === user.id ? message.receiver_id : message.sender_id;
-        const otherUserProfile = message.sender_id === user.id ? receiverProfile : senderProfile;
-        const otherUserName = `${otherUserProfile?.first_name || ''} ${otherUserProfile?.last_name || ''}`.trim() || 'Utilisateur inconnu';
-        const otherUserType = otherUserProfile?.user_type;
+        const otherUserName = message.sender_id === user.id 
+          ? `${message.receiver?.first_name || ''} ${message.receiver?.last_name || ''}`.trim() || 'Utilisateur inconnu'
+          : `${message.sender?.first_name || ''} ${message.sender?.last_name || ''}`.trim() || 'Utilisateur inconnu';
+        const otherUserType = message.sender_id === user.id 
+          ? message.receiver?.user_type
+          : message.sender?.user_type;
 
         // Filtrer selon les règles de communication
-        if (userType === 'traveler') {
-          // Les voyageurs ne voient que les conversations avec admin
+        if (userType === 'owner' || userType === 'traveler') {
+          // Les hôtes et voyageurs ne voient que les conversations avec admin
           if (otherUserType !== 'admin' && otherUserType !== 'super_admin') {
             return; // Ignorer cette conversation
           }
         }
-        // Les hôtes voient toutes leurs conversations (pas de filtre)
 
         if (!conversationMap.has(otherUserId)) {
           conversationMap.set(otherUserId, {
             id: otherUserId,
             participants: [user.id, otherUserId],
-            last_message: {
-              ...message,
-              sender: senderProfile,
-              receiver: receiverProfile
-            },
+            last_message: message,
             unread_count: 0,
             participant_name: otherUserName,
             participant_type: otherUserType
@@ -398,14 +199,8 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
         }
 
         const conversation = conversationMap.get(otherUserId)!;
-        const messageDate = new Date(message.created_at);
-        const lastMessageDate = new Date(conversation.last_message.created_at);
-        if (messageDate > lastMessageDate) {
-          conversation.last_message = {
-            ...message,
-            sender: senderProfile,
-            receiver: receiverProfile
-          };
+        if (new Date(message.created_at) > new Date(conversation.last_message.created_at)) {
+          conversation.last_message = message;
         }
         if (!message.is_read && message.receiver_id === user.id) {
           conversation.unread_count++;
@@ -427,39 +222,17 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
 
       const { data: messagesData, error } = await supabase
         .from('messages')
-        .select('*')
+        .select(`
+          *,
+          sender:user_profiles!sender_id(first_name, last_name, user_type),
+          receiver:user_profiles!receiver_id(first_name, last_name, user_type)
+        `)
         .or(`and(sender_id.eq.${user.id},receiver_id.eq.${conversationId}),and(sender_id.eq.${conversationId},receiver_id.eq.${user.id})`)
         .order('created_at', { ascending: true });
 
-      if (error) {
-        console.error('Erreur chargement messages:', error);
-        throw error;
-      }
+      if (error) throw error;
 
-      // Enrichir les messages avec les profils
-      if (messagesData && messagesData.length > 0) {
-        const userIds = new Set<string>();
-        messagesData.forEach(msg => {
-          if (msg.sender_id) userIds.add(msg.sender_id);
-          if (msg.receiver_id) userIds.add(msg.receiver_id);
-        });
-
-        const { data: profiles } = await supabase
-          .from('user_profiles')
-          .select('id, first_name, last_name, user_type')
-          .in('id', Array.from(userIds));
-
-        const profilesMap = new Map(profiles?.map(p => [p.id, p]) || []);
-        const enrichedMessages = messagesData.map(msg => ({
-          ...msg,
-          sender: profilesMap.get(msg.sender_id),
-          receiver: profilesMap.get(msg.receiver_id)
-        }));
-
-        setMessages(enrichedMessages);
-      } else {
-        setMessages([]);
-      }
+      setMessages(messagesData || []);
 
       // Marquer les messages comme lus
       await supabase
@@ -489,32 +262,34 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
         return;
       }
 
-      // Vérifier que le destinataire existe dans user_profiles
-      const { data: receiverProfile, error: receiverError } = await supabase
+      // Vérifier les règles de communication avant d'envoyer
+      const { data: receiverProfile } = await supabase
         .from('user_profiles')
-        .select('id, user_type')
+        .select('user_type')
         .eq('id', selectedConversation)
         .single();
 
-      if (receiverError || !receiverProfile) {
-        console.error('Erreur récupération destinataire:', receiverError);
-        alert('Destinataire introuvable. Veuillez réessayer.');
-        setSending(false);
-        return;
-      }
-
-      // Vérifier les règles de communication avant d'envoyer
-      if (userType === 'traveler') {
-        // Les voyageurs ne peuvent envoyer qu'à l'admin
+      if (userType === 'owner' || userType === 'traveler') {
+        // Les hôtes et voyageurs ne peuvent envoyer qu'à l'admin
         if (receiverProfile?.user_type !== 'admin' && receiverProfile?.user_type !== 'super_admin') {
-          alert('En tant que voyageur, vous ne pouvez communiquer qu\'avec l\'administration.');
+          alert('Vous ne pouvez communiquer qu\'avec l\'administration.');
           setSending(false);
           return;
         }
       }
-      // Les hôtes peuvent communiquer avec tout le monde (pas de restriction)
 
-      console.log('Envoi message de', user.id, 'vers', selectedConversation);
+      // Vérifier que le destinataire existe dans user_profiles
+      const { data: receiverCheck } = await supabase
+        .from('user_profiles')
+        .select('id')
+        .eq('id', selectedConversation)
+        .single();
+
+      if (!receiverCheck) {
+        alert('Destinataire introuvable. Veuillez réessayer.');
+        setSending(false);
+        return;
+      }
 
       // Insérer le message dans la base de données
       const { data: insertedMessage, error } = await supabase
@@ -526,7 +301,11 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
           content: newMessage.trim(),
           is_read: false
         }])
-        .select('*')
+        .select(`
+          *,
+          sender:user_profiles!sender_id(first_name, last_name, user_type),
+          receiver:user_profiles!receiver_id(first_name, last_name, user_type)
+        `)
         .single();
 
       if (error) {
@@ -582,21 +361,13 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
         return;
       }
 
-      // Vérifier que le destinataire existe dans user_profiles
-      const { data: receiverProfile, error: receiverError } = await supabase
+      // Vérifier les règles de communication avant d'envoyer
+      const { data: receiverProfile } = await supabase
         .from('user_profiles')
-        .select('id, user_type')
+        .select('user_type')
         .eq('id', selectedReceiverId)
         .single();
 
-      if (receiverError || !receiverProfile) {
-        console.error('Erreur récupération destinataire:', receiverError);
-        alert('Destinataire introuvable. Veuillez réessayer.');
-        setSending(false);
-        return;
-      }
-
-      // Vérifier les règles de communication avant d'envoyer
       if (userType === 'owner' || userType === 'traveler') {
         // Les hôtes et voyageurs ne peuvent envoyer qu'à l'admin
         if (receiverProfile?.user_type !== 'admin' && receiverProfile?.user_type !== 'super_admin') {
@@ -605,8 +376,6 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
           return;
         }
       }
-
-      console.log('Nouveau message de', user.id, 'vers', selectedReceiverId);
 
       // Insérer le message dans la base de données
       const { data: insertedMessage, error } = await supabase
@@ -702,10 +471,6 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
   };
 
   const filteredUsers = availableUsers.filter(user => {
-    if (!searchQuery.trim()) {
-      // Si pas de recherche, afficher tous les utilisateurs disponibles
-      return true;
-    }
     const fullName = `${user.first_name} ${user.last_name}`.toLowerCase();
     const searchLower = searchQuery.toLowerCase();
     return fullName.includes(searchLower) || 
@@ -726,13 +491,7 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
             </p>
           </div>
           <button
-            onClick={async () => {
-              console.log('[MessagingSystem] Ouverture du modal, userType:', userType);
-              // Recharger les utilisateurs disponibles quand on ouvre le modal
-              console.log('[MessagingSystem] Rechargement des utilisateurs pour', userType);
-              await loadAvailableUsers();
-              setShowNewMessage(true);
-            }}
+            onClick={() => setShowNewMessage(true)}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center space-x-2"
           >
             <MessageCircle className="w-4 h-4" />
@@ -924,162 +683,65 @@ const MessagingSystem: React.FC<MessagingSystemProps> = ({
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Destinataire *
                   </label>
-                  {userType === 'traveler' && (
-                    <div className="mb-2 p-3 bg-blue-50 border border-blue-200 rounded-md">
-                      <p className="text-sm text-blue-900">
-                        <strong>Note :</strong> En tant que voyageur, vous pouvez uniquement contacter l'administration.
-                      </p>
-                    </div>
-                  )}
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onFocus={() => setSearchQuery('')}
+                      className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="Rechercher un utilisateur..."
+                    />
+                  </div>
                   
-                  {/* Pour les voyageurs uniquement, afficher directement les administrateurs sous forme de cartes */}
-                  {userType === 'traveler' ? (
-                    <>
-                      {loadingUsers ? (
-                        <div className="p-6 text-center">
-                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-3"></div>
-                          <p className="text-sm text-gray-600">Chargement des administrateurs...</p>
-                        </div>
-                      ) : availableUsers.length > 0 ? (
-                        <div className="space-y-2">
-                          {availableUsers.map((user) => (
-                            <button
-                              key={user.id}
-                              type="button"
-                              onClick={() => {
-                                setSelectedReceiverId(user.id);
-                                setSearchQuery(`${user.first_name} ${user.last_name}`);
-                              }}
-                              className={`w-full p-4 text-left border-2 rounded-lg transition-all ${
-                                selectedReceiverId === user.id 
-                                  ? 'border-blue-600 bg-blue-50 shadow-md' 
-                                  : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                              }`}
-                            >
-                              <div className="flex items-center space-x-3">
-                                <div className="flex-shrink-0">
-                                  {getConversationIcon(user.user_type)}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-semibold text-gray-900">
-                                    {user.first_name} {user.last_name}
-                                  </p>
-                                  <p className="text-xs text-gray-500 mt-1">
-                                    {getUserTypeLabel(user.user_type)}
-                                    {user.email && (
-                                      <span className="ml-1">• {user.email}</span>
-                                    )}
-                                  </p>
-                                </div>
-                                {selectedReceiverId === user.id && (
-                                  <CheckCircle className="w-6 h-6 text-blue-600 flex-shrink-0" />
-                                )}
+                  {/* Liste des utilisateurs */}
+                  <div className="mt-2 max-h-48 overflow-y-auto border border-gray-200 rounded-md">
+                    {loadingUsers ? (
+                      <div className="p-4 text-center text-sm text-gray-500">
+                        Chargement...
+                      </div>
+                    ) : filteredUsers.length === 0 ? (
+                      <div className="p-4 text-center text-sm text-gray-500">
+                        Aucun utilisateur trouvé
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-gray-100">
+                        {filteredUsers.map((user) => (
+                          <button
+                            key={user.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedReceiverId(user.id);
+                              setSearchQuery(`${user.first_name} ${user.last_name}`);
+                            }}
+                            className={`w-full p-3 text-left hover:bg-gray-50 transition-colors ${
+                              selectedReceiverId === user.id ? 'bg-blue-50 border-l-4 border-blue-600' : ''
+                            }`}
+                          >
+                            <div className="flex items-center space-x-3">
+                              {getConversationIcon(user.user_type)}
+                              <div className="flex-1">
+                                <p className="text-sm font-medium text-gray-900">
+                                  {user.first_name} {user.last_name}
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                  {getUserTypeLabel(user.user_type)}
+                                </p>
                               </div>
-                            </button>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="p-6 text-center border-2 border-dashed border-gray-300 rounded-lg">
-                          <AlertCircle className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                          <p className="text-sm font-medium text-gray-900 mb-1">
-                            Aucun administrateur disponible
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            Veuillez contacter le support si vous avez besoin d'aide.
-                          </p>
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <div className="relative">
-                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                        <input
-                          type="text"
-                          value={searchQuery}
-                          onChange={(e) => setSearchQuery(e.target.value)}
-                          className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          placeholder={userType === 'traveler' ? "Rechercher un administrateur..." : "Rechercher un utilisateur..."}
-                        />
+                              {selectedReceiverId === user.id && (
+                                <CheckCircle className="w-5 h-5 text-blue-600" />
+                              )}
+                            </div>
+                          </button>
+                        ))}
                       </div>
-                      
-                      {/* Liste des utilisateurs */}
-                      <div className="mt-2 max-h-64 overflow-y-auto border border-gray-200 rounded-md">
-                        {loadingUsers ? (
-                          <div className="p-4 text-center text-sm text-gray-500">
-                            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600 mx-auto mb-2"></div>
-                            Chargement des utilisateurs...
-                          </div>
-                        ) : availableUsers.length === 0 ? (
-                          <div className="p-4 text-center text-sm text-gray-500">
-                            <AlertCircle className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                            <p className="font-medium">Aucun utilisateur disponible</p>
-                            <p className="text-xs mt-1">
-                              {userType === 'traveler' 
-                                ? 'Aucun administrateur trouvé. Veuillez contacter le support si vous avez besoin d\'aide.'
-                                : 'Aucun utilisateur trouvé dans le système.'}
-                            </p>
-                          </div>
-                        ) : filteredUsers.length === 0 ? (
-                          <div className="p-4 text-center text-sm text-gray-500">
-                            <p>Aucun utilisateur ne correspond à votre recherche</p>
-                            <p className="text-xs mt-1">Essayez avec d'autres mots-clés</p>
-                          </div>
-                        ) : (
-                          <div className="divide-y divide-gray-100">
-                            {filteredUsers.map((user) => (
-                              <button
-                                key={user.id}
-                                type="button"
-                                onClick={() => {
-                                  setSelectedReceiverId(user.id);
-                                  setSearchQuery(`${user.first_name} ${user.last_name}`);
-                                }}
-                                className={`w-full p-3 text-left hover:bg-gray-50 transition-colors ${
-                                  selectedReceiverId === user.id ? 'bg-blue-50 border-l-4 border-blue-600' : ''
-                                }`}
-                              >
-                                <div className="flex items-center space-x-3">
-                                  <div className="flex-shrink-0">
-                                    {getConversationIcon(user.user_type)}
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-medium text-gray-900 truncate">
-                                      {user.first_name} {user.last_name}
-                                    </p>
-                                    <p className="text-xs text-gray-500">
-                                      {getUserTypeLabel(user.user_type)}
-                                      {user.email && (
-                                        <span className="ml-1">• {user.email}</span>
-                                      )}
-                                    </p>
-                                  </div>
-                                  {selectedReceiverId === user.id && (
-                                    <CheckCircle className="w-5 h-5 text-blue-600 flex-shrink-0" />
-                                  )}
-                                </div>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </>
-                  )}
+                    )}
+                  </div>
                   
                   {selectedReceiverId && (
-                    <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-md">
-                      <div className="flex items-center space-x-2">
-                        <CheckCircle className="w-5 h-5 text-green-600" />
-                        <div>
-                          <p className="text-sm font-medium text-green-900">
-                            Destinataire sélectionné
-                          </p>
-                          <p className="text-xs text-green-700">
-                            {availableUsers.find(u => u.id === selectedReceiverId)?.first_name} {availableUsers.find(u => u.id === selectedReceiverId)?.last_name} 
-                            {' '}({getUserTypeLabel(availableUsers.find(u => u.id === selectedReceiverId)?.user_type || '')})
-                          </p>
-                        </div>
-                      </div>
+                    <div className="mt-2 p-2 bg-blue-50 rounded-md text-sm text-blue-900">
+                      Destinataire sélectionné: {filteredUsers.find(u => u.id === selectedReceiverId)?.first_name} {filteredUsers.find(u => u.id === selectedReceiverId)?.last_name}
                     </div>
                   )}
                 </div>
