@@ -9,8 +9,9 @@ import ReviewsList from './ReviewsList';
 import MessagingSystem from '../Forms/MessagingSystem';
 import PerformanceStats from './PerformanceStats';
 import PaymentReports from './PaymentReports';
-import { Home, Calendar, DollarSign, Users, Settings, Package, MessageCircle, Star, TrendingUp, Bell, CheckCircle, Clock } from 'lucide-react';
+import { Home, Calendar, DollarSign, Users, Settings, Package, MessageCircle, Star, TrendingUp, Bell, CheckCircle, Clock, Edit, X, Eye, Trash2, EyeOff } from 'lucide-react';
 import PropertyAvailabilityManager from './PropertyAvailabilityManager';
+import PropertyManagementForm from '../Forms/PropertyManagementForm';
 
 interface OwnerDashboardProps {
   userId: string;
@@ -25,6 +26,8 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ userId }) => {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [availabilityPropertyId, setAvailabilityPropertyId] = useState<string | null>(null);
+  const [editingPropertyId, setEditingPropertyId] = useState<string | null>(null);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [stats, setStats] = useState({
     properties: 0,
     reservations: 0,
@@ -646,12 +649,62 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ userId }) => {
                   <h4 className="font-semibold text-gray-900 mb-1">{property.title}</h4>
                   <p className="text-sm text-gray-600 mb-2">{property.address}</p>
                   <p className="text-lg font-bold text-primary mb-3">{property.price_per_night} €/nuit</p>
-                  <div className="flex space-x-2">
+                  
+                  {/* Première rangée : Actions principales */}
+                  <div className="grid grid-cols-2 gap-2 mb-2">
                     <button
                       onClick={() => navigate(`/property/${property.id}`)}
-                      className="flex-1 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm"
+                      className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm flex items-center justify-center gap-2"
                     >
-                      Voir
+                      <Eye className="w-4 h-4" />
+                      <span>Voir</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setEditingPropertyId(property.id);
+                        setShowEditModal(true);
+                      }}
+                      className="px-3 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors text-sm flex items-center justify-center gap-2"
+                    >
+                      <Edit className="w-4 h-4" />
+                      <span>Modifier</span>
+                    </button>
+                  </div>
+                  
+                  {/* Deuxième rangée : Actions secondaires */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={async () => {
+                        try {
+                          const { error } = await supabase
+                            .from('properties')
+                            .update({ is_published: !isPublished })
+                            .eq('id', property.id);
+                          
+                          if (error) throw error;
+                          loadData();
+                        } catch (error) {
+                          console.error('Erreur publication:', error);
+                          alert('Erreur lors de la publication');
+                        }
+                      }}
+                      className={`px-3 py-2 rounded-lg transition-colors text-sm flex items-center justify-center gap-2 ${
+                        isPublished
+                          ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200'
+                          : 'bg-green-100 text-green-800 hover:bg-green-200'
+                      }`}
+                    >
+                      {isPublished ? (
+                        <>
+                          <EyeOff className="w-4 h-4" />
+                          <span>Dépublier</span>
+                        </>
+                      ) : (
+                        <>
+                          <Eye className="w-4 h-4" />
+                          <span>Publier</span>
+                        </>
+                      )}
                     </button>
                     <button
                       onClick={async () => {
@@ -683,32 +736,10 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ userId }) => {
                           }
                         }
                       }}
-                      className="flex-1 px-3 py-2 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 transition-colors text-sm"
+                      className="px-3 py-2 bg-red-50 text-red-700 rounded-lg hover:bg-red-100 transition-colors text-sm flex items-center justify-center gap-2"
                     >
-                      Supprimer
-                    </button>
-                    <button
-                      onClick={async () => {
-                        try {
-                          const { error } = await supabase
-                            .from('properties')
-                            .update({ is_published: !isPublished })
-                            .eq('id', property.id);
-                          
-                          if (error) throw error;
-                          loadData();
-                        } catch (error) {
-                          console.error('Erreur publication:', error);
-                          alert('Erreur lors de la publication');
-                        }
-                      }}
-                      className={`flex-1 px-3 py-2 rounded-lg transition-colors text-sm ${
-                        isPublished
-                          ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200'
-                          : 'bg-green-100 text-green-800 hover:bg-green-200'
-                      }`}
-                    >
-                      {isPublished ? 'Dépublier' : 'Publier'}
+                      <Trash2 className="w-4 h-4" />
+                      <span>Supprimer</span>
                     </button>
                   </div>
                 </div>
@@ -734,11 +765,46 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ userId }) => {
       {availabilityPropertyId && (
         <PropertyAvailabilityManager
           propertyId={availabilityPropertyId}
+          userId={userId}
           onClose={() => {
             setAvailabilityPropertyId(null);
             loadData(); // Recharger les données pour mettre à jour le calendrier
           }}
         />
+      )}
+
+      {/* Modal de modification de propriété */}
+      {showEditModal && editingPropertyId && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto relative my-8">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center z-10">
+              <h2 className="text-2xl font-bold text-gray-900">Modifier la propriété</h2>
+              <button
+                onClick={() => {
+                  setShowEditModal(false);
+                  setEditingPropertyId(null);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-6">
+              <PropertyManagementForm
+                propertyId={editingPropertyId}
+                onSuccess={() => {
+                  setShowEditModal(false);
+                  setEditingPropertyId(null);
+                  loadData(); // Recharger les données après modification
+                }}
+                onCancel={() => {
+                  setShowEditModal(false);
+                  setEditingPropertyId(null);
+                }}
+              />
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

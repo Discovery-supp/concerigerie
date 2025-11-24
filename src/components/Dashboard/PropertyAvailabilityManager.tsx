@@ -1,34 +1,94 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Calendar, X, Save, Lock, Unlock, Eye, EyeOff } from 'lucide-react';
+import { Calendar, X, Save, Lock, Unlock, Eye, EyeOff, Home } from 'lucide-react';
 
 interface PropertyAvailabilityManagerProps {
   propertyId: string;
   onClose: () => void;
+  userId?: string;
 }
 
-const PropertyAvailabilityManager: React.FC<PropertyAvailabilityManagerProps> = ({ propertyId, onClose }) => {
+const PropertyAvailabilityManager: React.FC<PropertyAvailabilityManagerProps> = ({ propertyId: initialPropertyId, onClose, userId }) => {
+  const [allProperties, setAllProperties] = useState<any[]>([]);
+  const [selectedPropertyId, setSelectedPropertyId] = useState<string>(initialPropertyId);
+  const [selectedProperty, setSelectedProperty] = useState<any>(null);
   const [manuallyBlockedDates, setManuallyBlockedDates] = useState<string[]>([]);
   const [reservedDates, setReservedDates] = useState<string[]>([]);
   const [selectedDates, setSelectedDates] = useState<string[]>([]);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [loading, setLoading] = useState(false);
+  const [loadingProperties, setLoadingProperties] = useState(false);
   const [isPublished, setIsPublished] = useState(false);
 
   useEffect(() => {
-    loadPropertyData();
-  }, [propertyId]);
+    if (userId) {
+      loadAllProperties();
+    } else {
+      // Si userId n'est pas fourni, charger au moins la propriété initiale
+      if (selectedPropertyId) {
+        loadPropertyData();
+      }
+    }
+  }, [userId, selectedPropertyId]);
+
+  useEffect(() => {
+    if (selectedPropertyId) {
+      loadPropertyData();
+    }
+  }, [selectedPropertyId]);
+
+  const loadAllProperties = async () => {
+    if (!userId) return;
+    
+    setLoadingProperties(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: properties, error } = await supabase
+        .from('properties')
+        .select('id, title, address, images, is_published')
+        .eq('owner_id', userId || user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      
+      setAllProperties(properties || []);
+      
+      // Trouver la propriété sélectionnée initiale
+      if (initialPropertyId && properties) {
+        const initialProperty = properties.find(p => p.id === initialPropertyId);
+        if (initialProperty) {
+          setSelectedProperty(initialProperty);
+        } else if (properties.length > 0) {
+          // Si la propriété initiale n'existe plus, sélectionner la première
+          setSelectedPropertyId(properties[0].id);
+          setSelectedProperty(properties[0]);
+        }
+      } else if (properties && properties.length > 0) {
+        setSelectedPropertyId(properties[0].id);
+        setSelectedProperty(properties[0]);
+      }
+    } catch (error) {
+      console.error('Erreur chargement propriétés:', error);
+    } finally {
+      setLoadingProperties(false);
+    }
+  };
 
   const loadPropertyData = async () => {
+    if (!selectedPropertyId) return;
+    
     try {
       // Charger les dates bloquées manuellement depuis la propriété
       const { data: property } = await supabase
         .from('properties')
-        .select('blocked_dates, is_published')
-        .eq('id', propertyId)
+        .select('blocked_dates, is_published, title, address')
+        .eq('id', selectedPropertyId)
         .single();
 
       if (property) {
+        setSelectedProperty(property);
         setIsPublished(property.is_published || false);
         if (property.blocked_dates) {
           const dates = typeof property.blocked_dates === 'string' 
@@ -44,7 +104,7 @@ const PropertyAvailabilityManager: React.FC<PropertyAvailabilityManagerProps> = 
       const { data: reservations } = await supabase
         .from('reservations')
         .select('check_in, check_out, status')
-        .eq('property_id', propertyId)
+        .eq('property_id', selectedPropertyId)
         .in('status', ['confirmed', 'pending']);
 
       const reservationDates: string[] = [];
@@ -57,9 +117,21 @@ const PropertyAvailabilityManager: React.FC<PropertyAvailabilityManagerProps> = 
       });
 
       setReservedDates(reservationDates);
+      setSelectedDates([]); // Réinitialiser les sélections lors du changement de propriété
     } catch (error) {
       console.error('Erreur chargement disponibilité:', error);
     }
+  };
+
+  const handlePropertyChange = (newPropertyId: string) => {
+    // Si des modifications sont en cours, demander confirmation
+    if (selectedDates.length > 0) {
+      const confirmChange = window.confirm(
+        'Vous avez des modifications non enregistrées. Voulez-vous vraiment changer de propriété ? Les modifications seront perdues.'
+      );
+      if (!confirmChange) return;
+    }
+    setSelectedPropertyId(newPropertyId);
   };
 
   const toggleDate = (dateString: string) => {
@@ -114,7 +186,7 @@ const PropertyAvailabilityManager: React.FC<PropertyAvailabilityManagerProps> = 
           blocked_dates: updatedBlocked.length > 0 ? updatedBlocked : null,
           is_published: isPublished
         })
-        .eq('id', propertyId);
+        .eq('id', selectedPropertyId);
 
       if (error) throw error;
       alert('Disponibilité mise à jour avec succès');
@@ -134,10 +206,14 @@ const PropertyAvailabilityManager: React.FC<PropertyAvailabilityManagerProps> = 
       const { error } = await supabase
         .from('properties')
         .update({ is_published: !isPublished })
-        .eq('id', propertyId);
+        .eq('id', selectedPropertyId);
 
       if (error) throw error;
       setIsPublished(!isPublished);
+      // Mettre à jour la liste des propriétés
+      setAllProperties(prev => 
+        prev.map(p => p.id === selectedPropertyId ? { ...p, is_published: !isPublished } : p)
+      );
     } catch (error: any) {
       console.error('Erreur:', error);
       alert('Erreur lors de la mise à jour: ' + error.message);
@@ -186,7 +262,7 @@ const PropertyAvailabilityManager: React.FC<PropertyAvailabilityManagerProps> = 
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-xl max-w-6xl w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-2xl font-bold text-gray-900">Gestion de la disponibilité</h2>
@@ -198,7 +274,79 @@ const PropertyAvailabilityManager: React.FC<PropertyAvailabilityManagerProps> = 
             </button>
           </div>
 
-          {/* Statut de publication */}
+          {/* Liste de toutes les propriétés */}
+          {allProperties.length > 0 && (
+            <div className="mb-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-3 flex items-center">
+                <Home className="w-5 h-5 mr-2" />
+                Sélectionner une propriété
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-48 overflow-y-auto p-2 border border-gray-200 rounded-lg">
+                {allProperties.map((property) => {
+                  const isSelected = property.id === selectedPropertyId;
+                  const img = property.images 
+                    ? (Array.isArray(property.images) ? property.images[0] : 
+                       (typeof property.images === 'string' ? 
+                         (property.images.startsWith('[') ? JSON.parse(property.images)[0] : property.images) 
+                         : property.images))
+                    : 'https://images.pexels.com/photos/1571460/pexels-photo-1571460.jpeg';
+                  
+                  return (
+                    <button
+                      key={property.id}
+                      onClick={() => handlePropertyChange(property.id)}
+                      className={`p-3 rounded-lg border-2 transition-all text-left ${
+                        isSelected
+                          ? 'border-blue-500 bg-blue-50'
+                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-start space-x-3">
+                        <img
+                          src={img}
+                          alt={property.title}
+                          className="w-16 h-16 object-cover rounded"
+                          onError={(e) => {
+                            e.currentTarget.src = 'https://images.pexels.com/photos/1571460/pexels-photo-1571460.jpeg';
+                          }}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <h4 className={`font-medium text-sm truncate ${isSelected ? 'text-blue-900' : 'text-gray-900'}`}>
+                            {property.title}
+                          </h4>
+                          <p className="text-xs text-gray-600 truncate">{property.address}</p>
+                          <span className={`inline-block mt-1 px-2 py-0.5 text-xs rounded-full ${
+                            property.is_published
+                              ? 'bg-green-100 text-green-800'
+                              : 'bg-gray-100 text-gray-800'
+                          }`}>
+                            {property.is_published ? 'Publiée' : 'Non publiée'}
+                          </span>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {!selectedPropertyId && (
+            <div className="text-center py-12">
+              <Home className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+              <p className="text-gray-600">Aucune propriété disponible</p>
+            </div>
+          )}
+
+          {selectedPropertyId && selectedProperty && (
+            <>
+              {/* Propriété sélectionnée */}
+              <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <h3 className="font-semibold text-blue-900 mb-1">Propriété sélectionnée</h3>
+                <p className="text-sm text-blue-800">{selectedProperty.title || selectedProperty.address}</p>
+              </div>
+
+              {/* Statut de publication */}
           <div className="mb-6 p-4 bg-gray-50 rounded-lg">
             <div className="flex items-center justify-between">
               <div>
@@ -339,39 +487,41 @@ const PropertyAvailabilityManager: React.FC<PropertyAvailabilityManagerProps> = 
             </div>
           </div>
 
-          {/* Actions */}
-          <div className="flex justify-end space-x-4">
-            <button
-              onClick={onClose}
-              className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
-            >
-              Annuler
-            </button>
-            <button
-              onClick={saveBlockedDates}
-              disabled={loading || selectedDates.length === 0}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center space-x-2"
-            >
-              {loading ? (
-                <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                  <span>Enregistrement...</span>
-                </>
-              ) : (
-                <>
-                  <Save className="w-4 h-4" />
-                  <span>
-                    Enregistrer
-                    {selectedDates.length > 0 && (
-                      <span className="ml-2 bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">
-                        {selectedDates.length} modification{selectedDates.length > 1 ? 's' : ''}
+              {/* Actions */}
+              <div className="flex justify-end space-x-4">
+                <button
+                  onClick={onClose}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={saveBlockedDates}
+                  disabled={loading || selectedDates.length === 0}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center space-x-2"
+                >
+                  {loading ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      <span>Enregistrement...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4" />
+                      <span>
+                        Enregistrer
+                        {selectedDates.length > 0 && (
+                          <span className="ml-2 bg-white bg-opacity-20 px-2 py-0.5 rounded-full text-xs">
+                            {selectedDates.length} modification{selectedDates.length > 1 ? 's' : ''}
+                          </span>
+                        )}
                       </span>
-                    )}
-                  </span>
-                </>
-              )}
-            </button>
-          </div>
+                    </>
+                  )}
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

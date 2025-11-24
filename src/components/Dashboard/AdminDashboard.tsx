@@ -79,7 +79,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ userId }) => {
           // Essayer sans email (qui n'existe pas dans user_profiles)
           const result = await supabase
             .from('user_profiles')
-            .select('id, first_name, last_name, phone, user_type, created_at, updated_at')
+            .select('id, first_name, last_name, phone, user_type, created_at, updated_at, is_active')
             .order('created_at', { ascending: false });
           
           console.log('[AdminDashboard] Résultat colonnes spécifiques:', { data: result.data, error: result.error });
@@ -119,12 +119,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ userId }) => {
       } else {
         // S'assurer que is_active existe pour chaque utilisateur (par défaut true si absent)
         // Et s'assurer que email existe (même si c'est 'N/A')
-        const usersWithActive = (usersData || []).map((user: any) => ({
-          ...user,
-          is_active: user.is_active !== undefined && user.is_active !== null ? user.is_active : true,
-          email: user.email || 'N/A'
-        }));
-        console.log('[AdminDashboard] Utilisateurs chargés avec succès:', usersWithActive?.length || 0, usersWithActive);
+        const usersWithActive = (usersData || []).map((user: any) => {
+          // Log pour déboguer
+          console.log('[AdminDashboard] Utilisateur brut:', { id: user.id, name: `${user.first_name} ${user.last_name}`, is_active: user.is_active, type: typeof user.is_active });
+          
+          return {
+            ...user,
+            is_active: user.is_active === true || user.is_active === false ? Boolean(user.is_active) : true,
+            email: user.email || 'N/A'
+          };
+        });
+        console.log('[AdminDashboard] Utilisateurs chargés avec succès:', usersWithActive?.length || 0);
+        console.log('[AdminDashboard] Détails utilisateurs:', usersWithActive.map(u => ({ id: u.id, name: `${u.first_name} ${u.last_name}`, is_active: u.is_active })));
         setUsers(usersWithActive);
         setUsersError(null);
       }
@@ -320,22 +326,124 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ userId }) => {
   };
 
   const handleToggleUserActive = async (userId: string, currentStatus: boolean) => {
+    const user = users.find(u => u.id === userId);
+    const userName = user ? `${user.first_name} ${user.last_name}` : 'cet utilisateur';
+    
+    // Confirmation avant désactivation
+    if (currentStatus) {
+      const confirmMessage = `Êtes-vous sûr de vouloir désactiver le compte de ${userName} ?\n\nL'utilisateur ne pourra plus se connecter à son compte.`;
+      if (!confirm(confirmMessage)) {
+        return;
+      }
+    } else {
+      const confirmMessage = `Êtes-vous sûr de vouloir réactiver le compte de ${userName} ?`;
+      if (!confirm(confirmMessage)) {
+        return;
+      }
+    }
+
+    // Mise à jour optimiste de l'état local
+    const newStatus = !currentStatus;
+    setUsers(prevUsers => 
+      prevUsers.map(u => 
+        u.id === userId ? { ...u, is_active: newStatus } : u
+      )
+    );
+
     try {
-      const { error } = await supabase
+      // Forcer la valeur booléenne
+      const { error, data } = await supabase
         .from('user_profiles')
-        .update({ is_active: !currentStatus })
-        .eq('id', userId);
+        .update({ is_active: Boolean(newStatus) })
+        .eq('id', userId)
+        .select('id, is_active');
+      
+      console.log('[AdminDashboard] Résultat mise à jour:', { error, data, newStatus, userId, errorDetails: error });
 
       if (error) {
-        // Si l'erreur indique que la colonne n'existe pas, informer l'utilisateur
-        if (error.message?.includes('column') && error.message?.includes('does not exist')) {
-          alert('La fonctionnalité d\'activation/désactivation nécessite l\'exécution de la migration de base de données. Veuillez exécuter la migration: 20250122000000_add_is_active_to_users_and_providers.sql');
+        // Revenir à l'état précédent en cas d'erreur
+        setUsers(prevUsers => 
+          prevUsers.map(u => 
+            u.id === userId ? { ...u, is_active: currentStatus } : u
+          )
+        );
+        
+        // Gestion des erreurs spécifiques
+        const errorMessage = error.message || '';
+        const errorCode = error.code || '';
+        const errorDetails = error.details || '';
+        
+        console.error('[AdminDashboard] Erreur complète:', { error, errorMessage, errorCode, errorDetails });
+        
+        if (errorMessage?.includes('column') && errorMessage?.includes('does not exist') || 
+            errorMessage?.includes('is_active') ||
+            errorMessage?.includes('Cannot coerce')) {
+          alert('La fonctionnalité d\'activation/désactivation nécessite l\'exécution de la migration de base de données.\n\nVeuillez exécuter la migration SQL dans Supabase:\n20250122000000_add_is_active_to_users_and_providers.sql\n\nCette migration ajoutera la colonne is_active à la table user_profiles.');
+        } else if (errorCode === '42501' || errorMessage?.includes('permission') || errorMessage?.includes('policy') || errorCode === 'PGRST301') {
+          alert('Erreur de permissions: Vous n\'avez pas les droits pour modifier le statut de cet utilisateur.\n\nVeuillez exécuter la migration SQL dans Supabase:\n20250124000002_allow_admin_update_is_active.sql\n\nCette migration ajoutera les politiques RLS nécessaires pour permettre aux admins de modifier le champ is_active.');
+        } else if (errorCode === '500' || errorMessage?.includes('500') || errorDetails?.includes('500')) {
+          alert('Erreur serveur (500): La mise à jour a échoué.\n\nCauses possibles:\n1. La colonne is_active n\'existe pas encore - Exécutez: 20250122000000_add_is_active_to_users_and_providers.sql\n2. Les politiques RLS bloquent la mise à jour - Exécutez: 20250124000002_allow_admin_update_is_active.sql\n\nVérifiez la console pour plus de détails.');
         } else {
-          throw error;
+          alert('Erreur lors de la modification du statut: ' + (errorMessage || errorCode || 'Erreur inconnue') + '\n\nVérifiez que les migrations SQL ont été exécutées dans Supabase.');
         }
         return;
       }
-      loadData();
+      
+      // Vérifier que la mise à jour a bien été effectuée
+      console.log('[AdminDashboard] Statut mis à jour:', { userId, oldStatus: currentStatus, newStatus, dataReturned: data });
+      
+      // Si data est retourné, utiliser la valeur retournée
+      if (data && data.length > 0) {
+        const updatedValue = data[0].is_active;
+        console.log('[AdminDashboard] Valeur retournée par la mise à jour:', updatedValue);
+        
+        // Mettre à jour l'état avec la valeur retournée
+        setUsers(prevUsers => 
+          prevUsers.map(u => 
+            u.id === userId ? { ...u, is_active: Boolean(updatedValue) } : u
+          )
+        );
+        
+        // Vérifier si la valeur correspond à ce qu'on attend
+        if (Boolean(updatedValue) !== newStatus) {
+          console.warn('[AdminDashboard] ATTENTION: La valeur retournée ne correspond pas à la valeur attendue', { expected: newStatus, got: updatedValue });
+        }
+      } else {
+        // Si pas de data retourné, vérifier après un délai
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
+        const { data: updatedUser, error: checkError } = await supabase
+          .from('user_profiles')
+          .select('id, is_active')
+          .eq('id', userId)
+          .maybeSingle();
+        
+        if (checkError) {
+          console.error('[AdminDashboard] Erreur vérification mise à jour:', checkError);
+        } else if (updatedUser) {
+          console.log('[AdminDashboard] Vérification mise à jour:', updatedUser);
+          setUsers(prevUsers => 
+            prevUsers.map(u => 
+              u.id === userId ? { ...u, is_active: Boolean(updatedUser.is_active) } : u
+            )
+          );
+          
+          if (Boolean(updatedUser.is_active) !== newStatus) {
+            console.warn('[AdminDashboard] ATTENTION: La mise à jour n\'a pas été appliquée. Vérifiez les permissions RLS.');
+            alert('La mise à jour a été tentée mais n\'a peut-être pas été appliquée. Vérifiez les permissions RLS dans Supabase.');
+            return;
+          }
+        }
+      }
+      
+      // Message de succès
+      const action = newStatus ? 'réactivé' : 'désactivé';
+      alert(`Le compte de ${userName} a été ${action} avec succès.`);
+      
+      // Recharger les données pour s'assurer de la cohérence (avec un petit délai)
+      setTimeout(() => {
+        loadData();
+      }, 500);
     } catch (error: any) {
       console.error('Erreur activation/désactivation utilisateur:', error);
       alert('Erreur lors de la modification du statut: ' + (error.message || 'Erreur inconnue'));
@@ -551,25 +659,71 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ userId }) => {
                   const searchTerm = e.target.value;
                   if (searchTerm.length > 2) {
                     try {
-                      const { data: propertiesData, error } = await supabase
+                      // Recherche 1: Propriétés par titre, adresse, description
+                      const { data: propertiesByProperty, error: propError } = await supabase
                         .from('properties')
                         .select('*')
                         .or(`title.ilike.%${searchTerm}%,address.ilike.%${searchTerm}%,description.ilike.%${searchTerm}%`)
                         .limit(50);
                       
-                      if (error) throw error;
+                      if (propError) throw propError;
 
-                      let enrichedProperties = propertiesData || [];
+                      // Recherche 2: Hôtes par nom, prénom, email
+                      const { data: ownersBySearch, error: ownerError } = await supabase
+                        .from('user_profiles')
+                        .select('id, first_name, last_name, email, phone, user_type')
+                        .or(`first_name.ilike.%${searchTerm}%,last_name.ilike.%${searchTerm}%,email.ilike.%${searchTerm}%`)
+                        .limit(50);
+
+                      if (ownerError) throw ownerError;
+
+                      // Récupérer les propriétés des hôtes trouvés
+                      let propertiesByOwner: any[] = [];
+                      if (ownersBySearch && ownersBySearch.length > 0) {
+                        const ownerIds = ownersBySearch.map(o => o.id);
+                        const { data: propertiesData, error: propByOwnerError } = await supabase
+                          .from('properties')
+                          .select('*')
+                          .in('owner_id', ownerIds)
+                          .limit(50);
+
+                        if (propByOwnerError) throw propByOwnerError;
+                        propertiesByOwner = propertiesData || [];
+                      }
+
+                      // Combiner les résultats et éliminer les doublons
+                      const allPropertyIds = new Set();
+                      const combinedProperties: any[] = [];
+
+                      // Ajouter les propriétés trouvées par recherche directe
+                      (propertiesByProperty || []).forEach(prop => {
+                        if (!allPropertyIds.has(prop.id)) {
+                          allPropertyIds.add(prop.id);
+                          combinedProperties.push(prop);
+                        }
+                      });
+
+                      // Ajouter les propriétés trouvées par recherche d'hôte
+                      propertiesByOwner.forEach(prop => {
+                        if (!allPropertyIds.has(prop.id)) {
+                          allPropertyIds.add(prop.id);
+                          combinedProperties.push(prop);
+                        }
+                      });
+
+                      // Enrichir toutes les propriétés avec les informations des hôtes
+                      let enrichedProperties = combinedProperties;
                       if (enrichedProperties.length > 0) {
-                        const ownerIds = [...new Set(enrichedProperties.map(p => p.owner_id).filter(Boolean))];
-                        if (ownerIds.length > 0) {
-                          const { data: owners } = await supabase
+                        const allOwnerIds = [...new Set(enrichedProperties.map(p => p.owner_id).filter(Boolean))];
+                        if (allOwnerIds.length > 0) {
+                          // Récupérer tous les hôtes (ceux trouvés par recherche + ceux des propriétés)
+                          const { data: allOwners } = await supabase
                             .from('user_profiles')
                             .select('id, first_name, last_name, email, phone, user_type')
-                            .in('id', ownerIds);
+                            .in('id', allOwnerIds);
 
-                          if (owners) {
-                            const ownersMap = new Map(owners.map(owner => [owner.id, owner]));
+                          if (allOwners) {
+                            const ownersMap = new Map(allOwners.map(owner => [owner.id, owner]));
                             enrichedProperties = enrichedProperties.map(property => ({
                               ...property,
                               owner: ownersMap.get(property.owner_id) || null
@@ -743,37 +897,47 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ userId }) => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                          user.is_active !== false ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                          user.is_active === true 
+                            ? 'bg-green-100 text-green-700 border border-green-300' 
+                            : 'bg-red-100 text-red-700 border border-red-300'
                         }`}>
-                          {user.is_active !== false ? 'Actif' : 'Inactif'}
+                          {user.is_active === true ? 'Actif' : 'Désactivé'}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {user.created_at ? new Date(user.created_at).toLocaleDateString('fr-FR') : '—'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <div className="flex space-x-2">
+                        <div className="flex items-center space-x-2">
                           <button
                             onClick={() => {
                               setSelectedUser(user);
                               setShowEditModal(true);
                             }}
-                            className="text-blue-600 hover:text-blue-900"
-                            title="Modifier"
+                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                            title="Modifier l'utilisateur"
                           >
                             <Edit className="w-4 h-4" />
                           </button>
                           <button
-                            onClick={() => handleToggleUserActive(user.id, user.is_active !== false)}
-                            className={user.is_active !== false ? "text-orange-600 hover:text-orange-900" : "text-green-600 hover:text-green-900"}
-                            title={user.is_active !== false ? "Désactiver" : "Activer"}
+                            onClick={() => handleToggleUserActive(user.id, user.is_active === true)}
+                            className={`p-2 rounded-lg transition-colors ${
+                              user.is_active === true 
+                                ? "text-orange-600 hover:bg-orange-50 hover:text-orange-700" 
+                                : "text-green-600 hover:bg-green-50 hover:text-green-700"
+                            }`}
+                            title={user.is_active === true ? "Désactiver le compte" : "Activer le compte"}
                           >
-                            {user.is_active !== false ? <PowerOff className="w-4 h-4" /> : <Power className="w-4 h-4" />}
+                            {user.is_active === true ? (
+                              <PowerOff className="w-4 h-4" />
+                            ) : (
+                              <Power className="w-4 h-4" />
+                            )}
                           </button>
                           <button
                             onClick={() => handleDeleteUser(user.id)}
-                            className="text-red-600 hover:text-red-900"
-                            title="Supprimer"
+                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors hover:text-red-700"
+                            title="Supprimer l'utilisateur"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>

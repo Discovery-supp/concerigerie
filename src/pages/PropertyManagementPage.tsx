@@ -24,6 +24,7 @@ const PropertyManagementPage: React.FC = () => {
   const [showForm, setShowForm] = useState(false);
   const [editingProperty, setEditingProperty] = useState<string | null>(null);
   const [availabilityPropertyId, setAvailabilityPropertyId] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
   const STORAGE_BUCKET = 'public';
 
   React.useEffect(() => {
@@ -34,6 +35,8 @@ const PropertyManagementPage: React.FC = () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
+
+      setUserId(user.id);
 
       const { data, error } = await supabase
         .from('properties')
@@ -374,9 +377,10 @@ const PropertyManagementPage: React.FC = () => {
         </div>
 
         {/* Modal de gestion de disponibilité */}
-        {availabilityPropertyId && (
+        {availabilityPropertyId && userId && (
           <PropertyAvailabilityManager
             propertyId={availabilityPropertyId}
+            userId={userId}
             onClose={() => {
               setAvailabilityPropertyId(null);
               loadProperties();
