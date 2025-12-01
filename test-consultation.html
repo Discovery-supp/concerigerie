@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Consultation</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .success { color: green; }
+        .error { color: red; }
+        .info { color: blue; }
+    </style>
+</head>
+<body>
+    <h1>🧪 Test de la Configuration Supabase</h1>
+    
+    <div id="status">
+        <p class="info">🔄 Vérification en cours...</p>
+    </div>
+    
+    <h2>📋 Checklist de configuration :</h2>
+    <ul>
+        <li>✅ Script SQL exécuté avec succès</li>
+        <li>⏳ Fichier .env.local créé</li>
+        <li>⏳ Variables d'environnement configurées</li>
+        <li>⏳ Application redémarrée</li>
+    </ul>
+    
+    <h2>🔗 Liens de test :</h2>
+    <ul>
+        <li><a href="http://localhost:5173/consultation" target="_blank">Page de consultation</a></li>
+        <li><a href="http://localhost:5173" target="_blank">Page d'accueil</a></li>
+    </ul>
+    
+    <h2>📊 Vérification dans Supabase :</h2>
+    <ol>
+        <li>Allez dans votre dashboard Supabase</li>
+        <li>Ouvrez "Table Editor"</li>
+        <li>Sélectionnez la table "consultation_messages"</li>
+        <li>Vous devriez voir la structure de la table</li>
+    </ol>
+    
+    <script>
+        // Test simple de la page
+        fetch('http://localhost:5173/consultation')
+            .then(response => {
+                if (response.ok) {
+                    document.getElementById('status').innerHTML = 
+                        '<p class="success">✅ Application accessible !</p>';
+                } else {
+                    document.getElementById('status').innerHTML = 
+                        '<p class="error">❌ Application non accessible</p>';
+                }
+            })
+            .catch(error => {
+                document.getElementById('status').innerHTML = 
+                    '<p class="error">❌ Erreur de connexion</p>';
+            });
+    </script>
+</body>
+</html>
+
+
+
+
+

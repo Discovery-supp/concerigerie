@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Rapide Supabase</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .success { color: green; font-weight: bold; }
+        .error { color: red; font-weight: bold; }
+        .info { color: blue; }
+        button { padding: 15px 30px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; }
+        button:hover { background: #0056b3; }
+        .result { margin: 20px 0; padding: 15px; border-radius: 5px; background: #f8f9fa; }
+    </style>
+</head>
+<body>
+    <h1>🧪 Test Rapide - Consultation Messages</h1>
+    
+    <button onclick="testInsert()">➕ Tester l'Insertion</button>
+    <button onclick="testSelect()">📊 Tester la Lecture</button>
+    
+    <div id="result" class="result" style="display: none;"></div>
+    
+    <h2>📝 Instructions :</h2>
+    <ol>
+        <li>Cliquez sur "Tester l'Insertion" pour créer un message de test</li>
+        <li>Cliquez sur "Tester la Lecture" pour vérifier que le message existe</li>
+        <li>Si les deux tests passent, votre formulaire de consultation devrait fonctionner !</li>
+    </ol>
+
+    <script>
+        const SUPABASE_URL = 'https://jqklezcdawgihgnsyrzc.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impxa2xlemNkYXdnaWhnbnN5cnpjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk1MDQwNjIsImV4cCI6MjA3NTA4MDA2Mn0.at6KrfbJX8_Lj9XCvsJRC5ytGl0HeYU8D1QPhjyI4r0';
+        
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        
+        function showResult(message, isSuccess = true) {
+            const resultDiv = document.getElementById('result');
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = `<div class="${isSuccess ? 'success' : 'error'}">${message}</div>`;
+        }
+        
+        async function testInsert() {
+            showResult('🔄 Test d\'insertion en cours...', true);
+            
+            try {
+                const testMessage = {
+                    first_name: 'Test',
+                    last_name: 'User',
+                    email: 'test@example.com',
+                    phone: '+1234567890',
+                    subject: 'Test de connexion',
+                    message: 'Ceci est un test automatique - ' + new Date().toLocaleString()
+                };
+                
+                const { data, error } = await supabase
+                    .from('consultation_messages')
+                    .insert([testMessage])
+                    .select();
+                
+                if (error) {
+                    showResult(`❌ Erreur d'insertion: ${error.message}`, false);
+                } else {
+                    showResult(`✅ Insertion réussie ! Message créé avec l'ID: ${data[0].id}`, true);
+                    // Stocker l'ID pour le test de lecture
+                    window.testMessageId = data[0].id;
+                }
+            } catch (err) {
+                showResult(`❌ Erreur inattendue: ${err.message}`, false);
+            }
+        }
+        
+        async function testSelect() {
+            showResult('🔄 Test de lecture en cours...', true);
+            
+            try {
+                const { data, error } = await supabase
+                    .from('consultation_messages')
+                    .select('*')
+                    .order('created_at', { ascending: false })
+                    .limit(5);
+                
+                if (error) {
+                    showResult(`❌ Erreur de lecture: ${error.message}`, false);
+                } else {
+                    showResult(`✅ Lecture réussie ! ${data.length} message(s) trouvé(s)`, true);
+                    if (data.length > 0) {
+                        showResult(`📝 Dernier message: ${data[0].first_name} ${data[0].last_name} - ${data[0].subject}`, true);
+                    }
+                }
+            } catch (err) {
+                showResult(`❌ Erreur inattendue: ${err.message}`, false);
+            }
+        }
+    </script>
+</body>
+</html>
+

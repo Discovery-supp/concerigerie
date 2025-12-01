@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Connexion Supabase</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }
+        .success { color: green; font-weight: bold; }
+        .error { color: red; font-weight: bold; }
+        .info { color: blue; }
+        .warning { color: orange; }
+        button { padding: 10px 20px; margin: 10px 0; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        .log { background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h1>🧪 Test de Connexion Supabase</h1>
+    
+    <div id="status" class="info">🔄 Initialisation...</div>
+    
+    <button onclick="testConnection()">🔍 Tester la Connexion</button>
+    <button onclick="testTable()">📊 Tester la Table</button>
+    <button onclick="testInsert()">➕ Tester l'Insertion</button>
+    
+    <div id="results" class="log" style="display: none;">
+        <h3>📋 Résultats des Tests :</h3>
+        <div id="log"></div>
+    </div>
+    
+    <h2>📝 Instructions :</h2>
+    <ol>
+        <li>Cliquez sur "Tester la Connexion" pour vérifier l'accès à Supabase</li>
+        <li>Si la connexion échoue, vérifiez vos credentials dans le fichier .env</li>
+        <li>Cliquez sur "Tester la Table" pour vérifier si la table existe</li>
+        <li>Si la table n'existe pas, exécutez le script SQL dans Supabase</li>
+        <li>Cliquez sur "Tester l'Insertion" pour vérifier l'enregistrement</li>
+    </ol>
+
+    <script>
+        // Configuration Supabase (remplacez par vos vraies valeurs)
+        const SUPABASE_URL = 'https://jqklezcdawgihgnsyrzc.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impxa2xlemNkYXdnaWhnbnN5cnpjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk1MDQwNjIsImV4cCI6MjA3NTA4MDA2Mn0.at6KrfbJX8_Lj9XCvsJRC5ytGl0HeYU8D1QPhjyI4r0';
+        
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            const className = type === 'error' ? 'error' : type === 'success' ? 'success' : 'info';
+            logDiv.innerHTML += `<div class="${className}">[${timestamp}] ${message}</div>`;
+            document.getElementById('results').style.display = 'block';
+        }
+        
+        async function testConnection() {
+            log('🔄 Test de connexion à Supabase...');
+            try {
+                const { data, error } = await supabase.from('consultation_messages').select('count').limit(1);
+                if (error) {
+                    log(`❌ Erreur de connexion: ${error.message}`, 'error');
+                    if (error.message.includes('relation "public.consultation_messages" does not exist')) {
+                        log('💡 Solution: Exécutez le script SQL dans votre dashboard Supabase', 'warning');
+                    }
+                } else {
+                    log('✅ Connexion réussie !', 'success');
+                }
+            } catch (err) {
+                log(`❌ Erreur inattendue: ${err.message}`, 'error');
+            }
+        }
+        
+        async function testTable() {
+            log('🔄 Vérification de l\'existence de la table...');
+            try {
+                const { data, error } = await supabase
+                    .from('consultation_messages')
+                    .select('*')
+                    .limit(1);
+                
+                if (error) {
+                    log(`❌ Table non trouvée: ${error.message}`, 'error');
+                    log('💡 Exécutez le script create-table-script.sql dans Supabase', 'warning');
+                } else {
+                    log('✅ Table consultation_messages trouvée !', 'success');
+                }
+            } catch (err) {
+                log(`❌ Erreur: ${err.message}`, 'error');
+            }
+        }
+        
+        async function testInsert() {
+            log('🔄 Test d\'insertion d\'un message...');
+            try {
+                const testMessage = {
+                    first_name: 'Test',
+                    last_name: 'User',
+                    email: 'test@example.com',
+                    phone: '+1234567890',
+                    subject: 'Test de connexion',
+                    message: 'Ceci est un test automatique'
+                };
+                
+                const { data, error } = await supabase
+                    .from('consultation_messages')
+                    .insert([testMessage])
+                    .select();
+                
+                if (error) {
+                    log(`❌ Erreur d'insertion: ${error.message}`, 'error');
+                } else {
+                    log('✅ Insertion réussie !', 'success');
+                    log(`📝 Message créé avec l'ID: ${data[0].id}`, 'success');
+                    
+                    // Nettoyage
+                    await supabase
+                        .from('consultation_messages')
+                        .delete()
+                        .eq('id', data[0].id);
+                    log('🧹 Message de test supprimé', 'info');
+                }
+            } catch (err) {
+                log(`❌ Erreur: ${err.message}`, 'error');
+            }
+        }
+        
+        // Test automatique au chargement
+        window.onload = function() {
+            document.getElementById('status').innerHTML = '<div class="info">✅ Page chargée. Cliquez sur les boutons pour tester.</div>';
+        };
+    </script>
+</body>
+</html>
+
+
+
+
+
