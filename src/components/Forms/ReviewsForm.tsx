@@ -16,6 +16,8 @@ interface Review {
     check_in: string;
     check_out: string;
   };
+  host_response?: string | null;
+  host_response_date?: string | null;
 }
 
 interface Property {
@@ -66,6 +68,8 @@ const ReviewsForm: React.FC<ReviewsFormProps> = ({
   });
   const [filterProperty, setFilterProperty] = useState('');
   const [filterRating, setFilterRating] = useState('');
+  const [hostResponses, setHostResponses] = useState<Record<string, string>>({});
+  const [savingResponseId, setSavingResponseId] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -205,6 +209,43 @@ const ReviewsForm: React.FC<ReviewsFormProps> = ({
     } catch (error) {
       console.error('Erreur soumission avis:', error);
       alert('Erreur lors de la soumission de l\'avis');
+    }
+  };
+
+  const submitHostResponse = async (reviewId: string) => {
+    const response = hostResponses[reviewId];
+    if (!response || response.trim().length === 0) return;
+
+    try {
+      setSavingResponseId(reviewId);
+      const { error } = await supabase
+        .from('reviews')
+        .update({
+          host_response: response.trim(),
+          host_response_date: new Date().toISOString()
+        })
+        .eq('id', reviewId);
+
+      if (error) throw error;
+
+      setReviews(prev =>
+        prev.map(r =>
+          r.id === reviewId
+            ? { ...r, host_response: response.trim(), host_response_date: new Date().toISOString() }
+            : r
+        )
+      );
+
+      setHostResponses(prev => {
+        const copy = { ...prev };
+        delete copy[reviewId];
+        return copy;
+      });
+    } catch (error) {
+      console.error('Erreur enregistrement réponse hôte:', error);
+      alert('Erreur lors de l’enregistrement de votre commentaire sur le séjour.');
+    } finally {
+      setSavingResponseId(null);
     }
   };
 
@@ -455,6 +496,53 @@ const ReviewsForm: React.FC<ReviewsFormProps> = ({
                     <div className="mt-3">
                       <p className="text-sm text-gray-900">{review.comment}</p>
                     </div>
+                    {userType === 'owner' && (
+                      <div className="mt-4 border-t border-gray-200 pt-3">
+                        {review.host_response ? (
+                          <div className="bg-gray-50 rounded-md p-3 text-sm text-gray-800">
+                            <p className="font-semibold mb-1">Réponse de l'hôte</p>
+                            <p>{review.host_response}</p>
+                            {review.host_response_date && (
+                              <p className="mt-1 text-xs text-gray-500">
+                                Répondu le{' '}
+                                {new Date(review.host_response_date).toLocaleDateString('fr-FR')}
+                              </p>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            <label className="block text-sm font-medium text-gray-700">
+                              Commentaire sur le séjour du voyageur
+                            </label>
+                            <textarea
+                              value={hostResponses[review.id] || ''}
+                              onChange={(e) =>
+                                setHostResponses(prev => ({ ...prev, [review.id]: e.target.value }))
+                              }
+                              rows={3}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                              placeholder="Partagez votre retour sur le comportement du voyageur, le respect du logement, etc."
+                            />
+                            <div className="flex justify-end">
+                              <button
+                                type="button"
+                                onClick={() => submitHostResponse(review.id)}
+                                disabled={
+                                  !hostResponses[review.id] ||
+                                  hostResponses[review.id].trim().length === 0 ||
+                                  savingResponseId === review.id
+                                }
+                                className="px-3 py-1.5 bg-gray-900 text-white rounded-md text-xs font-medium hover:bg-black disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                {savingResponseId === review.id
+                                  ? 'Enregistrement...'
+                                  : 'Publier mon commentaire'}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                     {review.property_title && (
                       <div className="mt-2 flex items-center space-x-2 text-sm text-gray-500">
                         <Home className="w-4 h-4" />
