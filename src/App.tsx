@@ -11,6 +11,8 @@ import PropertyDetailPage from './pages/PropertyDetailPage';
 import ServicesPage from './pages/ServicesPage';
 import ServiceProvidersSearchPage from './pages/ServiceProvidersSearchPage';
 import LoginPage from './pages/LoginPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 import RegisterPage from './pages/RegisterPage';
 import TravelerRegisterPage from './pages/TravelerRegisterPage';
 import ConsultationPage from './pages/ConsultationPage';
@@ -134,6 +136,8 @@ const AppContent: React.FC = () => {
           <Route path="/service-providers" element={<ServiceProvidersSearchPage />} />
           <Route path="/consultation" element={<ConsultationPage />} />
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/traveler-register" element={<TravelerRegisterPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />

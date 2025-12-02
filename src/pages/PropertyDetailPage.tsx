@@ -528,7 +528,12 @@ const PropertyDetailPage: React.FC = () => {
                       </p>
                       {hostInfo.created_at && (
                         <p className="text-gray-500">
-                          Membre depuis {new Date(hostInfo.created_at).getFullYear()}
+                          Membre depuis{' '}
+                          {new Date(hostInfo.created_at).toLocaleDateString('fr-FR', {
+                            day: '2-digit',
+                            month: 'long',
+                            year: 'numeric'
+                          })}
                         </p>
                       )}
                     </div>

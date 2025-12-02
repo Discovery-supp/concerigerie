@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { Settings, User, Mail, Phone, Save, AlertCircle, Lock, CreditCard } from 'lucide-react';
+import { Settings, User, Mail, Phone, Save, AlertCircle, Lock, CreditCard, Eye, EyeOff } from 'lucide-react';
+import authService from '../services/auth';
 
 const ADMIN_CONTACT = {
   email: 'contact@nzooimmo.com',
@@ -19,8 +20,17 @@ const SettingsPage: React.FC = () => {
     email: '',
     phone: ''
   });
+  const [passwordForm, setPasswordForm] = useState({
+    newPassword: '',
+    confirmPassword: ''
+  });
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
+  const [updatingPassword, setUpdatingPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   useEffect(() => {
     loadUserData();
@@ -88,6 +98,36 @@ const SettingsPage: React.FC = () => {
       setError(error.message || 'Erreur lors de la mise à jour');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordError(null);
+    setPasswordSuccess(null);
+
+    if (!passwordForm.newPassword || passwordForm.newPassword.length < 8) {
+      setPasswordError('Le nouveau mot de passe doit contenir au moins 8 caractères.');
+      return;
+    }
+
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      setPasswordError('Les mots de passe ne correspondent pas.');
+      return;
+    }
+
+    setUpdatingPassword(true);
+
+    try {
+      await authService.updatePassword(passwordForm.newPassword);
+      setPasswordSuccess('Votre mot de passe a été mis à jour avec succès.');
+      setPasswordForm({ newPassword: '', confirmPassword: '' });
+      setTimeout(() => setPasswordSuccess(null), 4000);
+    } catch (err: any) {
+      console.error('Erreur mise à jour mot de passe:', err);
+      setPasswordError(err.message || 'Erreur lors de la mise à jour du mot de passe.');
+    } finally {
+      setUpdatingPassword(false);
     }
   };
 
@@ -259,13 +299,100 @@ const SettingsPage: React.FC = () => {
                 <Lock className="w-5 h-5 mr-2" />
                 Sécurité
               </h2>
-              
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <p className="text-sm text-blue-800">
-                  Pour modifier votre mot de passe, veuillez utiliser la fonctionnalité de réinitialisation 
-                  de mot de passe depuis la page de connexion.
+
+              {passwordError && (
+                <div className="mb-4 bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg flex items-center">
+                  <AlertCircle className="w-5 h-5 mr-2" />
+                  {passwordError}
+                </div>
+              )}
+
+              {passwordSuccess && (
+                <div className="mb-4 bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-lg flex items-center">
+                  <Save className="w-5 h-5 mr-2" />
+                  {passwordSuccess}
+                </div>
+              )}
+
+              <form onSubmit={handlePasswordSubmit} className="space-y-4">
+                <p className="text-sm text-gray-600">
+                  Vous pouvez modifier ici votre mot de passe lorsque vous êtes connecté. 
+                  En cas d&rsquo;oubli total, utilisez le lien &laquo; Mot de passe oublié ? &raquo; sur la page de connexion pour recevoir un email de réinitialisation.
                 </p>
-              </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Nouveau mot de passe
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showNewPassword ? 'text' : 'password'}
+                        value={passwordForm.newPassword}
+                        onChange={(e) =>
+                          setPasswordForm(prev => ({ ...prev, newPassword: e.target.value }))
+                        }
+                        className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                        placeholder="Votre nouveau mot de passe"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewPassword(prev => !prev)}
+                        className="absolute inset-y-0 right-0 px-3 flex items-center text-gray-400 hover:text-gray-600"
+                      >
+                        {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Minimum 8 caractères pour plus de sécurité.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Confirmer le nouveau mot de passe
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showConfirmPassword ? 'text' : 'password'}
+                        value={passwordForm.confirmPassword}
+                        onChange={(e) =>
+                          setPasswordForm(prev => ({ ...prev, confirmPassword: e.target.value }))
+                        }
+                        className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                        placeholder="Confirmez le nouveau mot de passe"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmPassword(prev => !prev)}
+                        className="absolute inset-y-0 right-0 px-3 flex items-center text-gray-400 hover:text-gray-600"
+                      >
+                        {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={updatingPassword || !passwordForm.newPassword || !passwordForm.confirmPassword}
+                    className="px-6 py-2 bg-gray-900 text-white rounded-lg hover:bg-black transition-colors flex items-center space-x-2 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                  >
+                    {updatingPassword ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                        <span>Mise à jour...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Lock className="w-4 h-4" />
+                        <span>Mettre à jour le mot de passe</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
             </div>
 
             {/* Boutons d'action */}

@@ -87,6 +87,7 @@ const HostDashboard: React.FC = () => {
   const [selectedPeriod, setSelectedPeriod] = useState('month');
   const [notifications, setNotifications] = useState<any[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string>('');
+  const [hostSince, setHostSince] = useState<string | null>(null);
 
   useEffect(() => {
     loadDashboardData();
@@ -105,6 +106,17 @@ const HostDashboard: React.FC = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         setCurrentUserId(user.id);
+
+        // Formatter la date d'inscription de l'hôte (depuis quand il est sur le site)
+        if (user.created_at) {
+          const createdAt = new Date(user.created_at);
+          const formatted = createdAt.toLocaleDateString('fr-FR', {
+            day: '2-digit',
+            month: 'long',
+            year: 'numeric'
+          });
+          setHostSince(formatted);
+        }
       }
     } catch (error) {
       console.error('Erreur récupération utilisateur:', error);
@@ -286,6 +298,12 @@ const HostDashboard: React.FC = () => {
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900">Tableau de bord Hôte</h1>
         <p className="text-gray-600 mt-1">Gérez vos propriétés et réservations</p>
+        {hostSince && (
+          <p className="text-sm text-gray-500 mt-1 flex items-center">
+            <Clock className="w-4 h-4 mr-1 text-gray-400" />
+            Hôte sur la plateforme depuis le {hostSince}
+          </p>
+        )}
       </div>
 
       {/* Onglets */}

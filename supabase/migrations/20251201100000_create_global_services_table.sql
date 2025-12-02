@@ -62,3 +62,4 @@ CREATE POLICY "global_services_delete_admin" ON global_services
 COMMIT;
 
 
+

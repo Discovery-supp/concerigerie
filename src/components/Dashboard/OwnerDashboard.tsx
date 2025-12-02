@@ -34,6 +34,7 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ userId }) => {
     monthlyRevenue: 0,
     previousMonthRevenue: 0
   });
+  const [ownerSince, setOwnerSince] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -42,6 +43,22 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ userId }) => {
 
   const loadData = async () => {
     try {
+      // Récupérer l'utilisateur courant pour afficher depuis quand il est sur le site
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user?.created_at) {
+          const createdAt = new Date(user.created_at);
+          const formatted = createdAt.toLocaleDateString('fr-FR', {
+            day: '2-digit',
+            month: 'long',
+            year: 'numeric'
+          });
+          setOwnerSince(formatted);
+        }
+      } catch (err) {
+        console.error('Erreur récupération date de création utilisateur:', err);
+      }
+
       // Charger les propriétés
       const { data: propertiesData } = await supabase
         .from('properties')
@@ -410,6 +427,15 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ userId }) => {
       {/* Vue d'ensemble */}
       {activeTab === 'overview' && (
         <>
+          {ownerSince && (
+            <div className="bg-white rounded-xl shadow-md p-4 flex items-center space-x-2">
+              <Clock className="w-5 h-5 text-gray-500" />
+              <p className="text-sm text-gray-700">
+                Hôte sur la plateforme depuis le <span className="font-medium">{ownerSince}</span>
+              </p>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <StatCard
               icon={<Home className="w-8 h-8 text-blue-600" />}

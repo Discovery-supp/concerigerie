@@ -97,3 +97,4 @@ CREATE POLICY "special_offers_delete" ON special_offers
 COMMIT;
 
 
+
