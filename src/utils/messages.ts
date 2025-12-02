@@ -8,6 +8,8 @@ export const messages = {
     reservationCreated: "Réservation créée avec succès ! Elle est maintenant en attente de confirmation par l'hôte.",
     reservationConfirmed: "Réservation confirmée automatiquement ! Vous pouvez consulter les détails dans vos réservations.",
     reservationConfirmedByHost: "Réservation confirmée avec succès ! Le client a été notifié.",
+    bookNowTraveler: "Réserver maintenant ! Votre réservation a été créée avec succès.",
+    bookNowHost: "Nouvelle réservation ! Réservez maintenant pour confirmer cette demande.",
     reservationCancelled: "Votre demande d'annulation a été envoyée à l'administration. Vous serez notifié de la décision.",
     cancellationApproved: "Annulation approuvée et remboursement effectué.",
     cancellationDenied: "Demande d'annulation refusée.",

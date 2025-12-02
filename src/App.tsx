@@ -68,13 +68,36 @@ const AppContent: React.FC = () => {
 
   useEffect(() => {
     const loadCurrentUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      try {
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
 
-      if (!user) {
-        setCurrentUser(null);
-        setUserType(null);
-        return;
-      }
+        // Gérer les erreurs 403 (Forbidden)
+        if (userError) {
+          if (userError.status === 403 || userError.message?.includes('Forbidden') ||
+              userError.message?.includes('JWT') || userError.message?.includes('token')) {
+            console.warn('[App] Erreur d\'authentification (403), nettoyage...');
+            try {
+              localStorage.removeItem('supabase.auth.token');
+              await supabase.auth.signOut();
+            } catch (signOutError) {
+              console.error('Erreur lors de la déconnexion:', signOutError);
+              localStorage.removeItem('supabase.auth.token');
+            }
+            setCurrentUser(null);
+            setUserType(null);
+            return;
+          }
+          // Pour les autres erreurs, continuer sans utilisateur
+          setCurrentUser(null);
+          setUserType(null);
+          return;
+        }
+
+        if (!user) {
+          setCurrentUser(null);
+          setUserType(null);
+          return;
+        }
 
       const { data: profile } = await supabase
         .from('user_profiles')
@@ -110,16 +133,143 @@ const AppContent: React.FC = () => {
         role
       });
       setUserType(role);
+      } catch (error: any) {
+        console.error('[App] Erreur chargement utilisateur:', error);
+        if (error?.status === 403 || error?.message?.includes('Forbidden')) {
+          try {
+            localStorage.removeItem('supabase.auth.token');
+            await supabase.auth.signOut();
+          } catch (signOutError) {
+            console.error('Erreur lors de la déconnexion:', signOutError);
+          }
+        }
+        setCurrentUser(null);
+        setUserType(null);
+      }
     };
 
     loadCurrentUser();
 
-    const { data: authSubscription } = supabase.auth.onAuthStateChange(() => {
+    const { data: authSubscription } = supabase.auth.onAuthStateChange(async (event, session) => {
+      // Gérer les erreurs de refresh token
+      if (event === 'TOKEN_REFRESHED' && !session) {
+        // Token invalide, déconnecter l'utilisateur
+        console.warn('Token invalide, déconnexion...');
+        try {
+          localStorage.removeItem('supabase.auth.token');
+          await supabase.auth.signOut();
+        } catch (error) {
+          console.error('Erreur lors de la déconnexion:', error);
+          localStorage.removeItem('supabase.auth.token');
+        }
+        setCurrentUser(null);
+        setUserType(null);
+        if (location.pathname !== '/login' && location.pathname !== '/') {
+          navigate('/login');
+        }
+        return;
+      }
+
+      // Gérer les erreurs d'authentification
+      if (event === 'SIGNED_OUT' || !session) {
+        setCurrentUser(null);
+        setUserType(null);
+        return;
+      }
+
       loadCurrentUser();
     });
 
+    // Vérifier périodiquement si la session est toujours valide
+    // Cela permet de détecter les erreurs de refresh token qui ne déclenchent pas d'événement
+    const sessionCheckInterval = setInterval(async () => {
+      try {
+        const { data: { session: currentSession }, error } = await supabase.auth.getSession();
+        
+        // Si on a une erreur de refresh token, nettoyer
+        if (error && (error.message?.includes('Refresh Token') || 
+                      error.message?.includes('Invalid Refresh Token'))) {
+          console.warn('Session invalide détectée, déconnexion...');
+          try {
+            localStorage.removeItem('supabase.auth.token');
+            await supabase.auth.signOut();
+          } catch (signOutError) {
+            console.error('Erreur lors de la déconnexion:', signOutError);
+            localStorage.removeItem('supabase.auth.token');
+          }
+          setCurrentUser(null);
+          setUserType(null);
+          if (location.pathname !== '/login' && location.pathname !== '/') {
+            navigate('/login');
+          }
+        } else if (!currentSession) {
+          // Session perdue, nettoyer l'état si nécessaire
+          setCurrentUser(prev => {
+            if (prev) {
+              setUserType(null);
+              return null;
+            }
+            return prev;
+          });
+        }
+      } catch (err) {
+        // Ignorer les erreurs silencieuses de vérification
+        console.debug('Erreur vérification session:', err);
+      }
+    }, 60000); // Vérifier toutes les minutes
+
+    // Gestionnaire d'erreur global pour les erreurs de refresh token
+    const handleAuthError = async (error: any) => {
+      const errorMessage = error?.message || error?.error_description || error?.toString() || '';
+      const isRefreshTokenError = 
+        errorMessage.includes('Refresh Token') || 
+        errorMessage.includes('Invalid Refresh Token') ||
+        errorMessage.includes('Refresh Token Not Found') ||
+        errorMessage.includes('token') && (error?.status === 400 || error?.code === 'invalid_grant') ||
+        error?.name === 'AuthApiError' && errorMessage.includes('token');
+
+      if (isRefreshTokenError) {
+        console.warn('Erreur de refresh token détectée, déconnexion automatique...', error);
+        try {
+          // Nettoyer le localStorage
+          localStorage.removeItem('supabase.auth.token');
+          // Déconnecter
+          await supabase.auth.signOut();
+        } catch (signOutError) {
+          console.error('Erreur lors de la déconnexion:', signOutError);
+          // Forcer le nettoyage même si signOut échoue
+          localStorage.removeItem('supabase.auth.token');
+        }
+        setCurrentUser(null);
+        setUserType(null);
+        if (location.pathname !== '/login' && location.pathname !== '/') {
+          navigate('/login');
+        }
+      }
+    };
+
+    // Écouter les erreurs non gérées (promesses rejetées)
+    const unhandledRejectionHandler = (event: PromiseRejectionEvent) => {
+      handleAuthError(event.reason);
+      // Empêcher l'affichage de l'erreur dans la console si c'est une erreur de refresh token
+      if (event.reason?.message?.includes('Refresh Token')) {
+        event.preventDefault();
+      }
+    };
+
+    // Écouter les erreurs JavaScript générales
+    const errorHandler = (event: ErrorEvent) => {
+      handleAuthError(event.error);
+    };
+
+    window.addEventListener('unhandledrejection', unhandledRejectionHandler);
+    window.addEventListener('error', errorHandler);
+
     return () => {
       authSubscription?.subscription.unsubscribe();
+      window.removeEventListener('unhandledrejection', unhandledRejectionHandler);
+      window.removeEventListener('error', errorHandler);
+      clearInterval(sessionCheckInterval);
     };
   }, []);
 

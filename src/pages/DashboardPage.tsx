@@ -53,7 +53,33 @@ const DashboardPage: React.FC = () => {
     try {
       const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
 
-      if (authError || !authUser) {
+      // Gérer spécifiquement les erreurs d'authentification (403, refresh token, JWT)
+      if (authError) {
+        const isAuthError = 
+          authError.status === 403 || 
+          authError.message?.includes('Forbidden') ||
+          authError.message?.includes('Refresh Token') || 
+          authError.message?.includes('Invalid Refresh Token') ||
+          authError.message?.includes('JWT') ||
+          authError.message?.includes('token');
+          
+        if (isAuthError) {
+          console.warn('Erreur d\'authentification détectée, déconnexion automatique...', authError);
+          try {
+            localStorage.removeItem('supabase.auth.token');
+            await supabase.auth.signOut();
+          } catch (signOutError) {
+            console.error('Erreur lors de la déconnexion:', signOutError);
+            localStorage.removeItem('supabase.auth.token');
+          }
+          navigate('/login');
+          return;
+        }
+        navigate('/login');
+        return;
+      }
+
+      if (!authUser) {
         navigate('/login');
         return;
       }

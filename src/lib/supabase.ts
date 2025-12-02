@@ -24,7 +24,17 @@ const getOrCreateClient = () => {
 
   if (!globalScope[SUPABASE_GLOBAL_KEY]) {
     globalScope[SUPABASE_GLOBAL_KEY] = isSupabaseConfigured
-      ? createClient(supabaseUrl!, supabaseAnonKey!)
+      ? createClient(supabaseUrl!, supabaseAnonKey!, {
+          auth: {
+            autoRefreshToken: true,
+            persistSession: true,
+            detectSessionInUrl: true,
+            // Gérer les erreurs de refresh token
+            storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+            storageKey: 'supabase.auth.token',
+            flowType: 'pkce'
+          }
+        })
       : createClient('https://placeholder.supabase.co', 'placeholder-key')
   }
 

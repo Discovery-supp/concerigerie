@@ -222,7 +222,30 @@ export const authService = {
     try {
       const { data: { user }, error } = await supabase.auth.getUser()
       
-      if (error) throw error
+      // Gérer spécifiquement les erreurs d'authentification (403, refresh token, JWT)
+      if (error) {
+        const isAuthError = 
+          error.status === 403 || 
+          error.message?.includes('Forbidden') ||
+          error.message?.includes('Refresh Token') || 
+          error.message?.includes('Invalid Refresh Token') ||
+          error.message?.includes('JWT') ||
+          error.message?.includes('token');
+          
+        if (isAuthError) {
+          console.warn('Erreur d\'authentification détectée, déconnexion automatique...', error)
+          // Nettoyer la session
+          try {
+            localStorage.removeItem('supabase.auth.token')
+            await supabase.auth.signOut()
+          } catch (signOutError) {
+            console.error('Erreur lors de la déconnexion:', signOutError)
+            localStorage.removeItem('supabase.auth.token')
+          }
+          return { user: null, profile: null }
+        }
+        throw error
+      }
 
       if (user) {
         const { data: profile, error: profileError } = await supabase
@@ -237,8 +260,19 @@ export const authService = {
       }
 
       return { user: null, profile: null }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erreur récupération utilisateur:', error)
+      
+      // Si c'est une erreur de refresh token, nettoyer la session
+      if (error?.message?.includes('Refresh Token') || 
+          error?.message?.includes('Invalid Refresh Token')) {
+        try {
+          await supabase.auth.signOut()
+        } catch (signOutError) {
+          console.error('Erreur lors de la déconnexion:', signOutError)
+        }
+      }
+      
       return { user: null, profile: null }
     }
   }

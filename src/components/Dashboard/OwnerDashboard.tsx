@@ -11,6 +11,8 @@ import PerformanceStats from './PerformanceStats';
 import HostEarnings from './HostEarnings';
 import { Home, Calendar, DollarSign, Users, Settings, Package, MessageCircle, Star, TrendingUp, Bell, CheckCircle, Clock } from 'lucide-react';
 import PropertyAvailabilityManager from './PropertyAvailabilityManager';
+import { useToast } from '../../contexts/ToastContext';
+import { messages } from '../../utils/messages';
 
 interface OwnerDashboardProps {
   userId: string;
@@ -18,6 +20,7 @@ interface OwnerDashboardProps {
 
 const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ userId }) => {
   const navigate = useNavigate();
+  const { showSuccess, showError } = useToast();
   const [activeTab, setActiveTab] = useState<'overview' | 'reservations' | 'calendar' | 'reviews' | 'messages' | 'stats' | 'payments' | 'properties' | 'settings'>('overview');
   const [reservations, setReservations] = useState<any[]>([]);
   const [properties, setProperties] = useState<any[]>([]);
@@ -45,7 +48,25 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ userId }) => {
     try {
       // Récupérer l'utilisateur courant pour afficher depuis quand il est sur le site
       try {
-        const { data: { user } } = await supabase.auth.getUser();
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        
+        // Gérer les erreurs 403 (Forbidden) - token invalide ou expiré
+        if (userError) {
+          if (userError.status === 403 || userError.message?.includes('Forbidden') || 
+              userError.message?.includes('JWT') || userError.message?.includes('token')) {
+            console.warn('[OwnerDashboard] Erreur d\'authentification (403), déconnexion...');
+            try {
+              localStorage.removeItem('supabase.auth.token');
+              await supabase.auth.signOut();
+            } catch (signOutError) {
+              console.error('Erreur lors de la déconnexion:', signOutError);
+            }
+            window.location.href = '/login';
+            return;
+          }
+          throw userError;
+        }
+        
         if (user?.created_at) {
           const createdAt = new Date(user.created_at);
           const formatted = createdAt.toLocaleDateString('fr-FR', {
@@ -55,8 +76,12 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ userId }) => {
           });
           setOwnerSince(formatted);
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error('Erreur récupération date de création utilisateur:', err);
+        // Si c'est une erreur 403, rediriger vers login
+        if (err?.status === 403 || err?.message?.includes('Forbidden')) {
+          window.location.href = '/login';
+        }
       }
 
       // Charger les propriétés
@@ -279,6 +304,10 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ userId }) => {
         .eq('id', reservationId)
         .single();
 
+      if (!reservation) {
+        throw new Error('Réservation introuvable');
+      }
+
       // Charger la propriété séparément si nécessaire
       let property = null;
       if (reservation?.property_id) {
@@ -291,15 +320,61 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ userId }) => {
       }
       const reservationWithProperty = { ...reservation, property };
 
-      const { error } = await supabase
+      // Mettre à jour la réservation
+      const { error: updateError } = await supabase
         .from('reservations')
         .update({ 
           status: newStatus,
+          updated_at: new Date().toISOString(),
           ...(newStatus === 'confirmed' && { payment_status: 'paid' })
         })
         .eq('id', reservationId);
 
-      if (error) throw error;
+      if (updateError) throw updateError;
+
+      // Récupérer la réservation mise à jour avec une requête séparée
+      const { data: updatedReservation, error: fetchError } = await supabase
+        .from('reservations')
+        .select('*')
+        .eq('id', reservationId)
+        .maybeSingle();
+
+      if (fetchError) {
+        console.error('Erreur récupération réservation mise à jour:', fetchError);
+        // Continuer quand même avec les données que nous avons
+      }
+
+      // Utiliser la réservation mise à jour si disponible, sinon utiliser les données locales
+      const finalReservation = updatedReservation || {
+        ...reservation,
+        status: newStatus,
+        updated_at: new Date().toISOString(),
+        ...(newStatus === 'confirmed' && { payment_status: 'paid' })
+      };
+
+      // Mettre à jour immédiatement l'état local avec la réservation mise à jour
+      setReservations(prev => {
+        const beforeCount = prev.filter(r => r.status === 'pending').length;
+        const updated = prev.map(r => {
+          if (r.id === reservationId) {
+            const updatedRes = {
+              ...r,
+              ...finalReservation,
+              property: property || r.property
+            };
+            console.log('[OwnerDashboard] Réservation mise à jour:', {
+              id: reservationId,
+              avant: r.status,
+              après: updatedRes.status
+            });
+            return updatedRes;
+          }
+          return r;
+        });
+        const afterCount = updated.filter(r => r.status === 'pending').length;
+        console.log('[OwnerDashboard] Réservations en attente: avant=', beforeCount, 'après=', afterCount);
+        return updated;
+      });
 
       // Si la réservation est confirmée, créer une notification pour le guest
       if (newStatus === 'confirmed' && reservation?.guest_id) {
@@ -309,20 +384,69 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ userId }) => {
             user_id: reservation.guest_id,
             type: 'reservation_confirmed',
             title: 'Réservation confirmée',
-            message: `Votre réservation pour ${reservation.property?.title || 'la propriété'} a été confirmée par l'hôte.`,
+            message: `Votre réservation pour ${property?.title || reservation.property?.title || 'la propriété'} a été confirmée par l'hôte. Réservez maintenant !`,
             data: {
               reservation_id: reservationId,
               property_id: reservation.property_id
             },
             is_read: false
           });
+        
+        // Afficher un toast de succès pour l'hôte
+        showSuccess(messages.success.reservationConfirmedByHost);
+      } else if (newStatus === 'cancelled') {
+        showSuccess('Réservation annulée avec succès.');
       }
 
-      loadData();
+      // Recharger seulement les notifications, pas toutes les données
+      // La mise à jour locale est suffisante pour l'UI
       loadNotifications();
+      
+      // Vérifier que la mise à jour a bien été persistée après un délai
+      // mais ne pas recharger toutes les données pour éviter d'écraser la mise à jour locale
+      setTimeout(async () => {
+        try {
+          // Vérifier que la mise à jour a bien été persistée
+          const { data: verifyReservation, error: verifyError } = await supabase
+            .from('reservations')
+            .select('*')
+            .eq('id', reservationId)
+            .maybeSingle();
+          
+          if (verifyError) {
+            console.error('[OwnerDashboard] Erreur vérification réservation:', verifyError);
+            return;
+          }
+          
+          if (verifyReservation && verifyReservation.status === newStatus) {
+            // La mise à jour est confirmée dans la DB
+            console.log('[OwnerDashboard] Réservation vérifiée dans la DB:', verifyReservation.status);
+            
+            // Mettre à jour l'état local avec les données de la DB pour s'assurer de la cohérence
+            setReservations(prev => {
+              const current = prev.find(r => r.id === reservationId);
+              // Ne mettre à jour que si le statut local n'est pas déjà correct
+              if (current && current.status !== newStatus) {
+                console.log('[OwnerDashboard] Correction du statut local depuis la DB');
+                return prev.map(r => 
+                  r.id === reservationId 
+                    ? { ...r, ...verifyReservation, property: property || r.property }
+                    : r
+                );
+              }
+              return prev;
+            });
+          } else {
+            console.warn('[OwnerDashboard] Statut dans la DB ne correspond pas:', verifyReservation?.status, 'attendu:', newStatus);
+          }
+        } catch (error) {
+          console.error('[OwnerDashboard] Erreur lors de la vérification:', error);
+        }
+      }, 1000);
+
     } catch (error) {
       console.error('Erreur mise à jour réservation:', error);
-      alert('Erreur lors de la mise à jour: ' + (error as any).message);
+      showError('Erreur lors de la mise à jour: ' + (error as any).message);
     }
   };
 

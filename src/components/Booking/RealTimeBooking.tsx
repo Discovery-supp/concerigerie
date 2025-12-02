@@ -502,13 +502,13 @@ const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSu
 
         const notificationsToInsert: any[] = [];
 
-        // Notification au propriétaire (host)
+        // Notification au propriétaire (host) avec message "Réserver maintenant"
         if (propOwner?.owner_id) {
           notificationsToInsert.push({
             user_id: propOwner.owner_id,
             type: 'new_reservation',
             title: 'Nouvelle réservation',
-            message: `Vous avez une nouvelle réservation pour ${propOwner.title || 'votre propriété'}.`,
+            message: `Vous avez une nouvelle réservation pour ${propOwner.title || 'votre propriété'}. Réservez maintenant !`,
             data: {
               reservation_id: reservation.id,
               property_id: property.id,
@@ -555,10 +555,11 @@ const RealTimeBooking: React.FC<RealTimeBookingProps> = ({ property, onBookingSu
       }
 
       const autoConfirmed = reservation.status === 'confirmed';
+      // Afficher un toast avec message "Réserver maintenant" pour le voyageur
       showSuccess(
         autoConfirmed
           ? messages.success.reservationConfirmed
-          : messages.success.reservationCreated
+          : messages.success.bookNowTraveler
       );
       setShowPayment(false);
       

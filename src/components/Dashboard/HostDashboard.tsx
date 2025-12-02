@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { attachReservationDetails } from '../../services/reservations';
-import { attachReservationDetails } from '../../services/reservations';
 import HostEarnings from './HostEarnings';
+import { useToast } from '../../contexts/ToastContext';
+import { messages } from '../../utils/messages';
 import { 
   Calendar, 
   Users, 
@@ -71,6 +72,7 @@ interface HostStats {
 
 const HostDashboard: React.FC = () => {
   const navigate = useNavigate();
+  const { showSuccess, showError } = useToast();
   const [activeTab, setActiveTab] = useState('overview');
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -125,7 +127,25 @@ const HostDashboard: React.FC = () => {
 
   const loadDashboardData = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      
+      // Gérer les erreurs 403 (Forbidden) - token invalide ou expiré
+      if (userError) {
+        if (userError.status === 403 || userError.message?.includes('Forbidden') || 
+            userError.message?.includes('JWT') || userError.message?.includes('token')) {
+          console.warn('[HostDashboard] Erreur d\'authentification (403), déconnexion...');
+          try {
+            localStorage.removeItem('supabase.auth.token');
+            await supabase.auth.signOut();
+          } catch (signOutError) {
+            console.error('Erreur lors de la déconnexion:', signOutError);
+          }
+          window.location.href = '/login';
+          return;
+        }
+        throw userError;
+      }
+      
       if (!user) return;
 
       // eslint-disable-next-line no-console
@@ -278,8 +298,16 @@ const HostDashboard: React.FC = () => {
     }
   };
 
-  const pendingReservations = reservations.filter(reservation => reservation.status === 'pending');
-  const confirmedReservations = reservations.filter(reservation => reservation.status === 'confirmed');
+  // Utiliser useMemo pour s'assurer que le filtre se recalcule quand reservations change
+  const pendingReservations = React.useMemo(() => {
+    const filtered = reservations.filter(reservation => reservation.status === 'pending');
+    console.log('[HostDashboard] pendingReservations recalculé:', filtered.length, 'réservations');
+    return filtered;
+  }, [reservations]);
+  
+  const confirmedReservations = React.useMemo(() => {
+    return reservations.filter(reservation => reservation.status === 'confirmed');
+  }, [reservations]);
 
   if (loading) {
     return (
@@ -404,7 +432,7 @@ const HostDashboard: React.FC = () => {
                   </div>
                 ) : (
                   pendingReservations.map((reservation) => (
-                    <div key={reservation.id} className="py-4 first:pt-0 last:pb-0 border-b last:border-b-0 border-gray-100">
+                    <div key={`${reservation.id}-${reservation.status}`} className="py-4 first:pt-0 last:pb-0 border-b last:border-b-0 border-gray-100">
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
                           <div className="flex items-center space-x-3">
@@ -428,44 +456,137 @@ const HostDashboard: React.FC = () => {
                         <div className="flex items-center space-x-2">
                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(reservation.status)}`}>
                             {getStatusIcon(reservation.status)}
-                            <span className="ml-1">En attente</span>
+                            <span className="ml-1">
+                              {reservation.status === 'pending' ? 'En attente' : 
+                               reservation.status === 'confirmed' ? 'Confirmée' :
+                               reservation.status === 'cancelled' ? 'Annulée' : reservation.status}
+                            </span>
                           </span>
+                          {reservation.status === 'pending' && (
+                          <>
                           <button
                             onClick={async () => {
                               try {
-                                const { error } = await supabase
+                                // Mettre à jour la réservation
+                                const { error: updateError } = await supabase
                                   .from('reservations')
                                   .update({ 
                                     status: 'confirmed',
-                                    payment_status: 'paid'
+                                    payment_status: 'paid',
+                                    updated_at: new Date().toISOString()
                                   })
                                   .eq('id', reservation.id);
-                                if (!error) {
-                                  // Créer une notification pour le guest
-                                  const { data: { user } } = await supabase.auth.getUser();
-                                  if (user && reservation.guest_id) {
-                                    await supabase
-                                      .from('notifications')
-                                      .insert({
-                                        user_id: reservation.guest_id,
-                                        type: 'reservation_confirmed',
-                                        title: 'Réservation confirmée',
-                                        message: `Votre réservation pour ${reservation.property?.title || 'la propriété'} a été confirmée par l'hôte.`,
-                                        data: {
-                                          reservation_id: reservation.id,
-                                          property_id: reservation.property_id
-                                        },
-                                        is_read: false
-                                      });
-                                  }
-                                  alert('Réservation confirmée avec succès ! Le client a été notifié.');
-                                  loadDashboardData();
-                                } else {
-                                  alert('Erreur lors de la confirmation: ' + error.message);
+
+                                if (updateError) {
+                                  alert('Erreur lors de la confirmation: ' + updateError.message);
+                                  return;
                                 }
+
+                                // Récupérer la réservation mise à jour avec une requête séparée
+                                const { data: updatedReservation, error: fetchError } = await supabase
+                                  .from('reservations')
+                                  .select('*')
+                                  .eq('id', reservation.id)
+                                  .maybeSingle();
+
+                                if (fetchError) {
+                                  console.error('Erreur récupération réservation mise à jour:', fetchError);
+                                }
+
+                                // Utiliser la réservation mise à jour si disponible, sinon utiliser les données locales
+                                const finalReservation = updatedReservation || {
+                                  ...reservation,
+                                  status: 'confirmed',
+                                  payment_status: 'paid',
+                                  updated_at: new Date().toISOString()
+                                };
+
+                                // Mettre à jour l'état local immédiatement pour que l'UI se mette à jour tout de suite
+                                setReservations(prev => {
+                                  const updated = prev.map(r => {
+                                    if (r.id === reservation.id) {
+                                      const updatedRes = { ...r, ...finalReservation, property: reservation.property };
+                                      console.log('[HostDashboard] Réservation AVANT mise à jour:', r.status);
+                                      console.log('[HostDashboard] Réservation APRÈS mise à jour:', updatedRes.status);
+                                      return updatedRes;
+                                    }
+                                    return r;
+                                  });
+                                  console.log('[HostDashboard] Nombre de réservations en attente après mise à jour:', updated.filter(r => r.status === 'pending').length);
+                                  return updated;
+                                });
+
+                                // Créer une notification pour le guest avec message "Réserver maintenant"
+                                const { data: { user } } = await supabase.auth.getUser();
+                                if (user && reservation.guest_id) {
+                                  await supabase
+                                    .from('notifications')
+                                    .insert({
+                                      user_id: reservation.guest_id,
+                                      type: 'reservation_confirmed',
+                                      title: 'Réservation confirmée',
+                                      message: `Votre réservation pour ${reservation.property?.title || 'la propriété'} a été confirmée par l'hôte. Réservez maintenant !`,
+                                      data: {
+                                        reservation_id: reservation.id,
+                                        property_id: reservation.property_id
+                                      },
+                                      is_read: false
+                                    });
+                                }
+
+                                // Afficher un toast de succès avec message "Réserver maintenant"
+                                showSuccess(messages.success.bookNowHost);
+                                
+                                // Vérifier que la mise à jour a bien été persistée après un court délai
+                                setTimeout(async () => {
+                                  try {
+                                    // Vérifier que la mise à jour a bien été persistée
+                                    const { data: verifyReservation, error: verifyError } = await supabase
+                                      .from('reservations')
+                                      .select('*')
+                                      .eq('id', reservation.id)
+                                      .maybeSingle();
+                                    
+                                    if (verifyError) {
+                                      console.error('[HostDashboard] Erreur vérification réservation:', verifyError);
+                                      // En cas d'erreur, on garde la mise à jour locale
+                                      return;
+                                    }
+                                    
+                                    if (verifyReservation) {
+                                      console.log('[HostDashboard] Réservation vérifiée dans la DB:', verifyReservation.status);
+                                      
+                                      // Seulement mettre à jour si le statut dans la DB est confirmé
+                                      if (verifyReservation.status === 'confirmed') {
+                                        // La mise à jour est confirmée, mettre à jour l'état local avec les données de la DB
+                                        setReservations(prev => {
+                                          const current = prev.find(r => r.id === reservation.id);
+                                          // Ne mettre à jour que si le statut local n'est pas déjà confirmé
+                                          if (current && current.status !== 'confirmed') {
+                                            console.log('[HostDashboard] Mise à jour depuis la DB nécessaire');
+                                            return prev.map(r =>
+                                              r.id === reservation.id
+                                                ? { ...r, ...verifyReservation, property: reservation.property }
+                                                : r
+                                            );
+                                          }
+                                          console.log('[HostDashboard] Statut déjà confirmé localement, pas de mise à jour nécessaire');
+                                          return prev;
+                                        });
+                                      } else {
+                                        console.warn('[HostDashboard] Statut dans la DB n\'est pas confirmé:', verifyReservation.status);
+                                      }
+                                    } else {
+                                      console.warn('[HostDashboard] Réservation non trouvée dans la DB après mise à jour');
+                                    }
+                                  } catch (error) {
+                                    console.error('[HostDashboard] Erreur lors de la vérification:', error);
+                                    // En cas d'erreur, on garde quand même la mise à jour locale
+                                  }
+                                }, 1000);
                               } catch (error: any) {
                                 console.error('Erreur confirmation:', error);
-                                alert('Erreur lors de la confirmation: ' + error.message);
+                                showError('Erreur lors de la confirmation: ' + error.message);
                               }
                             }}
                             className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 transition-colors"
@@ -475,21 +596,78 @@ const HostDashboard: React.FC = () => {
                           <button
                             onClick={async () => {
                               try {
-                                const { error } = await supabase
+                                // Mettre à jour la réservation
+                                const { error: updateError } = await supabase
                                   .from('reservations')
-                                  .update({ status: 'cancelled' })
+                                  .update({ 
+                                    status: 'cancelled',
+                                    updated_at: new Date().toISOString()
+                                  })
                                   .eq('id', reservation.id);
-                                if (!error) {
-                                  loadDashboardData();
+
+                                if (updateError) {
+                                  console.error('Erreur annulation:', updateError);
+                                  showError('Erreur lors de l\'annulation: ' + updateError.message);
+                                  return;
                                 }
+
+                                // Récupérer la réservation mise à jour avec une requête séparée
+                                const { data: updatedReservation, error: fetchError } = await supabase
+                                  .from('reservations')
+                                  .select('*')
+                                  .eq('id', reservation.id)
+                                  .maybeSingle();
+
+                                if (fetchError) {
+                                  console.error('Erreur récupération réservation mise à jour:', fetchError);
+                                }
+
+                                // Utiliser la réservation mise à jour si disponible, sinon utiliser les données locales
+                                const finalReservation = updatedReservation || {
+                                  ...reservation,
+                                  status: 'cancelled',
+                                  updated_at: new Date().toISOString()
+                                };
+
+                                // Mettre à jour l'état local immédiatement
+                                setReservations(prev =>
+                                  prev.map(r =>
+                                    r.id === reservation.id
+                                      ? { ...r, ...finalReservation, property: reservation.property }
+                                      : r
+                                  )
+                                );
+
+                                // Afficher un toast de succès
+                                showSuccess('Réservation refusée avec succès.');
+
+                                // Recharger les données après un court délai
+                                setTimeout(() => {
+                                  loadDashboardData().then(() => {
+                                    // S'assurer que la réservation mise à jour est toujours dans l'état
+                                    setReservations(prev => {
+                                      const existing = prev.find(r => r.id === reservation.id);
+                                      if (existing && existing.status !== 'cancelled') {
+                                        return prev.map(r => 
+                                          r.id === reservation.id 
+                                            ? { ...r, ...finalReservation, property: reservation.property }
+                                            : r
+                                        );
+                                      }
+                                      return prev;
+                                    });
+                                  });
+                                }, 500);
                               } catch (error) {
                                 console.error('Erreur annulation:', error);
+                                showError('Erreur lors de l\'annulation');
                               }
                             }}
                             className="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 transition-colors"
                           >
                             Refuser
                           </button>
+                          )}
                         </div>
                       </div>
                     </div>
