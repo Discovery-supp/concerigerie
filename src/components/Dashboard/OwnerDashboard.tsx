@@ -321,31 +321,78 @@ const OwnerDashboard: React.FC<OwnerDashboardProps> = ({ userId }) => {
       const reservationWithProperty = { ...reservation, property };
 
       // Mettre à jour la réservation
-      const { error: updateError } = await supabase
+      const updateData = { 
+        status: newStatus,
+        updated_at: new Date().toISOString(),
+        ...(newStatus === 'confirmed' && { payment_status: 'paid' })
+      };
+
+      console.log('[OwnerDashboard] Tentative de mise à jour réservation:', {
+        reservationId,
+        updateData,
+        currentStatus: reservation.status,
+        propertyId: reservation.property_id
+      });
+
+      const { data: updatedData, error: updateError } = await supabase
         .from('reservations')
-        .update({ 
-          status: newStatus,
-          updated_at: new Date().toISOString(),
-          ...(newStatus === 'confirmed' && { payment_status: 'paid' })
-        })
-        .eq('id', reservationId);
+        .update(updateData)
+        .eq('id', reservationId)
+        .select()
+        .single();
 
-      if (updateError) throw updateError;
+      if (updateError) {
+        console.error('[OwnerDashboard] Erreur mise à jour réservation:', {
+          error: updateError,
+          message: updateError.message,
+          code: updateError.code,
+          details: updateError.details,
+          hint: updateError.hint
+        });
+        
+        // Si c'est une erreur de permissions, afficher un message plus clair
+        if (updateError.code === '42501' || updateError.message?.includes('policy') || updateError.message?.includes('permission')) {
+          showError('Erreur de permissions: Vous n\'avez pas les droits pour modifier cette réservation. Vérifiez les politiques RLS dans Supabase.');
+        } else {
+          showError('Erreur lors de la mise à jour: ' + updateError.message);
+        }
+        throw updateError;
+      }
 
-      // Récupérer la réservation mise à jour avec une requête séparée
-      const { data: updatedReservation, error: fetchError } = await supabase
+      if (!updatedData) {
+        console.error('[OwnerDashboard] Aucune donnée retournée après mise à jour');
+        throw new Error('La mise à jour n\'a retourné aucune donnée');
+      }
+
+      console.log('[OwnerDashboard] Réservation mise à jour avec succès dans la DB:', {
+        id: updatedData.id,
+        status: updatedData.status,
+        payment_status: updatedData.payment_status
+      });
+
+      // Vérifier immédiatement que la mise à jour a bien été persistée
+      const { data: verifyData, error: verifyError } = await supabase
         .from('reservations')
         .select('*')
         .eq('id', reservationId)
-        .maybeSingle();
+        .single();
 
-      if (fetchError) {
-        console.error('Erreur récupération réservation mise à jour:', fetchError);
-        // Continuer quand même avec les données que nous avons
+      if (verifyError) {
+        console.error('[OwnerDashboard] Erreur lors de la vérification immédiate:', verifyError);
+      } else {
+        console.log('[OwnerDashboard] Vérification immédiate - Statut dans la DB:', verifyData?.status);
+        if (verifyData?.status !== newStatus) {
+          console.error('[OwnerDashboard] PROBLÈME: Le statut dans la DB ne correspond pas!', {
+            attendu: newStatus,
+            obtenu: verifyData?.status
+          });
+          showError('Erreur: La mise à jour n\'a pas été persistée correctement dans la base de données. Vérifiez les politiques RLS.');
+          return;
+        }
       }
 
-      // Utiliser la réservation mise à jour si disponible, sinon utiliser les données locales
-      const finalReservation = updatedReservation || {
+      // Utiliser les données retournées par la DB
+      const finalReservation = updatedData || {
         ...reservation,
         status: newStatus,
         updated_at: new Date().toISOString(),

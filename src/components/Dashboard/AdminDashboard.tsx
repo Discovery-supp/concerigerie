@@ -13,6 +13,8 @@ import GlobalServicesManager from '../Admin/GlobalServicesManager';
 import { Users, Calendar, Home, DollarSign, Settings, BarChart3, FileText, Download, Edit, Trash2, Shield, UserPlus, MessageCircle, Power, PowerOff, X, Search, Wrench } from 'lucide-react';
 import MessagingSystem from '../Forms/MessagingSystem';
 import { attachReservationDetails, reservationsService } from '../../services/reservations';
+import { useToast } from '../../contexts/ToastContext';
+import { messages } from '../../utils/messages';
 
 interface AdminDashboardProps {
   userId: string;
@@ -20,6 +22,7 @@ interface AdminDashboardProps {
 
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ userId }) => {
   const navigate = useNavigate();
+  const { showSuccess, showError } = useToast();
   const [activeTab, setActiveTab] = useState<
     | 'overview'
     | 'users'
@@ -491,6 +494,257 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ userId }) => {
     } catch (error) {
       console.error('Erreur activation/désactivation prestataire:', error);
       alert('Erreur lors de la modification du statut');
+    }
+  };
+
+  const handleStatusChange = async (reservationId: string, newStatus: string) => {
+    try {
+      // Vérifier que l'utilisateur est bien connecté et est admin
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) {
+        throw new Error('Utilisateur non connecté');
+      }
+
+      console.log('[AdminDashboard] Utilisateur connecté:', user.id);
+
+      // Vérifier le type d'utilisateur
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('user_type')
+        .eq('id', user.id)
+        .single();
+
+      console.log('[AdminDashboard] Type d\'utilisateur:', profile?.user_type);
+
+      // Récupérer les informations de la réservation avant la mise à jour
+      const { data: reservation, error: reservationError } = await supabase
+        .from('reservations')
+        .select('*')
+        .eq('id', reservationId)
+        .single();
+
+      if (reservationError) {
+        console.error('[AdminDashboard] Erreur récupération réservation:', reservationError);
+        throw new Error('Erreur lors de la récupération de la réservation: ' + reservationError.message);
+      }
+
+      if (!reservation) {
+        throw new Error('Réservation introuvable');
+      }
+
+      console.log('[AdminDashboard] Réservation trouvée:', {
+        id: reservation.id,
+        status: reservation.status,
+        property_id: reservation.property_id
+      });
+
+      // Charger la propriété séparément si nécessaire
+      let property = null;
+      if (reservation?.property_id) {
+        const { data: propData } = await supabase
+          .from('properties')
+          .select('id, title')
+          .eq('id', reservation.property_id)
+          .maybeSingle();
+        property = propData;
+      }
+
+      // Mettre à jour la réservation
+      const updateData = { 
+        status: newStatus,
+        updated_at: new Date().toISOString(),
+        ...(newStatus === 'confirmed' && { payment_status: 'paid' })
+      };
+      
+      console.log('[AdminDashboard] Tentative de mise à jour réservation:', {
+        reservationId,
+        updateData,
+        currentStatus: reservation.status,
+        userType: profile?.user_type
+      });
+
+      const { data: updatedData, error: updateError } = await supabase
+        .from('reservations')
+        .update(updateData)
+        .eq('id', reservationId)
+        .select()
+        .single();
+
+      if (updateError) {
+        console.error('[AdminDashboard] Erreur mise à jour réservation:', {
+          error: updateError,
+          message: updateError.message,
+          code: updateError.code,
+          details: updateError.details,
+          hint: updateError.hint,
+          userType: profile?.user_type
+        });
+        
+        // Si c'est une erreur de permissions, afficher un message plus clair
+        if (updateError.code === '42501' || updateError.message?.includes('policy') || updateError.message?.includes('permission')) {
+          showError('Erreur de permissions: Vous n\'avez pas les droits pour modifier cette réservation. Vérifiez que vous êtes connecté en tant qu\'admin.');
+        } else {
+          showError('Erreur lors de la mise à jour: ' + updateError.message);
+        }
+        throw updateError;
+      }
+
+      if (!updatedData) {
+        console.error('[AdminDashboard] Aucune donnée retournée après mise à jour');
+        throw new Error('La mise à jour n\'a retourné aucune donnée');
+      }
+
+      console.log('[AdminDashboard] Réservation mise à jour avec succès dans la DB:', {
+        id: updatedData.id,
+        status: updatedData.status,
+        payment_status: updatedData.payment_status,
+        updated_at: updatedData.updated_at
+      });
+
+      // Vérifier immédiatement que la mise à jour a bien été persistée
+      const { data: verifyData, error: verifyError } = await supabase
+        .from('reservations')
+        .select('*')
+        .eq('id', reservationId)
+        .single();
+
+      if (verifyError) {
+        console.error('[AdminDashboard] Erreur lors de la vérification immédiate:', verifyError);
+      } else {
+        console.log('[AdminDashboard] Vérification immédiate - Statut dans la DB:', verifyData?.status);
+        if (verifyData?.status !== newStatus) {
+          console.error('[AdminDashboard] PROBLÈME: Le statut dans la DB ne correspond pas!', {
+            attendu: newStatus,
+            obtenu: verifyData?.status
+          });
+          showError('Erreur: La mise à jour n\'a pas été persistée correctement dans la base de données.');
+          return;
+        }
+      }
+
+      // Utiliser les données retournées par la DB
+      const finalReservation = {
+        ...updatedData,
+        property: property || reservation.property
+      };
+
+      console.log('[AdminDashboard] Données finales pour mise à jour locale:', finalReservation);
+
+      // Mettre à jour l'état local immédiatement
+      setReservations(prev => {
+        const beforeCount = prev.filter(r => r.status === 'pending').length;
+        const currentReservation = prev.find(r => r.id === reservationId);
+        
+        console.log('[AdminDashboard] Réservation actuelle dans l\'état:', {
+          id: reservationId,
+          status: currentReservation?.status,
+          found: !!currentReservation
+        });
+
+        const updated = prev.map(r => {
+          if (r.id === reservationId) {
+            const updatedRes = {
+              ...r,
+              ...finalReservation,
+              status: finalReservation.status,
+              payment_status: finalReservation.payment_status,
+              updated_at: finalReservation.updated_at,
+              property: finalReservation.property
+            };
+            console.log('[AdminDashboard] Réservation mise à jour localement:', {
+              id: reservationId,
+              avant: r.status,
+              après: updatedRes.status,
+              paymentStatusAvant: r.payment_status,
+              paymentStatusAprès: updatedRes.payment_status,
+              updatedDataStatus: updatedData.status
+            });
+            return updatedRes;
+          }
+          return r;
+        });
+        
+        const afterCount = updated.filter(r => r.status === 'pending').length;
+        const updatedReservation = updated.find(r => r.id === reservationId);
+        
+        console.log('[AdminDashboard] Réservations en attente: avant=', beforeCount, 'après=', afterCount);
+        console.log('[AdminDashboard] Réservation après mise à jour locale:', {
+          id: reservationId,
+          status: updatedReservation?.status,
+          found: !!updatedReservation
+        });
+        
+        return updated;
+      });
+
+      // Si la réservation est confirmée, créer une notification pour le guest
+      if (newStatus === 'confirmed' && reservation?.guest_id) {
+        await supabase
+          .from('notifications')
+          .insert({
+            user_id: reservation.guest_id,
+            type: 'reservation_confirmed',
+            title: 'Réservation confirmée',
+            message: `Votre réservation pour ${property?.title || 'la propriété'} a été confirmée par l'administration.`,
+            data: {
+              reservation_id: reservationId,
+              property_id: reservation.property_id
+            },
+            is_read: false
+          });
+        
+        showSuccess('Réservation confirmée avec succès.');
+      } else if (newStatus === 'cancelled') {
+        showSuccess('Réservation refusée avec succès.');
+      }
+
+      // Vérifier que la mise à jour a bien été persistée après un délai
+      // mais ne pas recharger toutes les données pour éviter d'écraser la mise à jour locale
+      setTimeout(async () => {
+        try {
+          // Vérifier que la mise à jour a bien été persistée
+          const { data: verifyReservation, error: verifyError } = await supabase
+            .from('reservations')
+            .select('*')
+            .eq('id', reservationId)
+            .maybeSingle();
+          
+          if (verifyError) {
+            console.error('[AdminDashboard] Erreur vérification réservation:', verifyError);
+            return;
+          }
+          
+          if (verifyReservation && verifyReservation.status === newStatus) {
+            // La mise à jour est confirmée dans la DB
+            console.log('[AdminDashboard] Réservation vérifiée dans la DB:', verifyReservation.status);
+            
+            // Mettre à jour l'état local avec les données de la DB pour s'assurer de la cohérence
+            setReservations(prev => {
+              const current = prev.find(r => r.id === reservationId);
+              // Ne mettre à jour que si le statut local n'est pas déjà correct
+              if (current && current.status !== newStatus) {
+                console.log('[AdminDashboard] Correction du statut local depuis la DB');
+                return prev.map(r => 
+                  r.id === reservationId 
+                    ? { ...r, ...verifyReservation, property: property || r.property }
+                    : r
+                );
+              }
+              return prev;
+            });
+          } else {
+            console.warn('[AdminDashboard] Statut dans la DB ne correspond pas:', verifyReservation?.status, 'attendu:', newStatus);
+            // Si le statut ne correspond pas, recharger les données
+            loadData();
+          }
+        } catch (error) {
+          console.error('[AdminDashboard] Erreur lors de la vérification:', error);
+        }
+      }, 1000);
+
+    } catch (error: any) {
+      console.error('Erreur mise à jour réservation:', error);
+      showError('Erreur lors de la mise à jour: ' + (error.message || 'Erreur inconnue'));
     }
   };
 
@@ -1051,6 +1305,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ userId }) => {
               reservations={reservations}
               userType="admin"
               title="Toutes les réservations"
+              onStatusChange={handleStatusChange}
               onCancel={handleCancelReservation}
             />
           </div>
